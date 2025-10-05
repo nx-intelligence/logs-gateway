@@ -1,4 +1,4 @@
-# @nx-morpheus/logs-gateway
+# logs-gateway
 
 A standardized logging gateway for Node.js applications. Provides flexible logging with console output, file output, environment variable configuration, and custom logger injection.
 
@@ -17,13 +17,13 @@ A standardized logging gateway for Node.js applications. Provides flexible loggi
 ## Installation
 
 ```bash
-npm install @nx-morpheus/logs-gateway
+npm install logs-gateway
 ```
 
 ## Quick Start
 
 ```typescript
-import { createLogger } from '@nx-morpheus/logs-gateway';
+import { createLogger } from 'logs-gateway';
 
 // Create a package-specific logger
 const logger = createLogger(
@@ -80,7 +80,7 @@ DEBUG=my-app-namespace
 
 ```typescript
 // src/logger.ts
-import { createLogger, LoggingConfig, LogsGateway } from '@nx-morpheus/logs-gateway';
+import { createLogger, LoggingConfig, LogsGateway } from 'logs-gateway';
 
 export function createAppLogger(config?: LoggingConfig): LogsGateway {
   return createLogger(
@@ -117,7 +117,7 @@ export class WebApp {
 
 ```typescript
 // src/logger.ts
-import { createLogger, LoggingConfig, LogsGateway } from '@nx-morpheus/logs-gateway';
+import { createLogger, LoggingConfig, LogsGateway } from 'logs-gateway';
 
 export function createDbLogger(config?: LoggingConfig): LogsGateway {
   return createLogger(
@@ -180,7 +180,7 @@ const logger = createLogger(
 
 Each service just needs:
 
-1. **Add dependency**: `"@nx-morpheus/logs-gateway": "^1.0.0"`
+1. **Add dependency**: `"logs-gateway": "^1.0.0"`
 2. **Create factory**:
 
 ```typescript

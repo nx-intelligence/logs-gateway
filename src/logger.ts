@@ -1,5 +1,5 @@
 /**
- * @nx-morpheus/logs-gateway - Core Logger Implementation
+ * logs-gateway - Core LogsGateway Implementation
  * 
  * This file contains the main Logger class that handles all logging functionality.
  */
@@ -64,7 +64,7 @@ export class LogsGateway {
     // Validate configuration
     if (this.config.logToFile && !this.config.logFilePath) {
       throw new Error(
-        `[@nx-morpheus/logs-gateway] ${packageConfig.packageName}: logFilePath is required when logToFile is true. ` +
+        `[logs-gateway] ${packageConfig.packageName}: logFilePath is required when logToFile is true. ` +
         `Set it via config or ${envPrefix}_LOG_FILE environment variable.`
       );
     }
@@ -90,7 +90,7 @@ export class LogsGateway {
       }
     } catch (err) {
       console.error(
-        `[@nx-morpheus/logs-gateway] ${this.packageConfig.packageName}: Failed to create log directory:`,
+        `[logs-gateway] ${this.packageConfig.packageName}: Failed to create log directory:`,
         err
       );
     }
@@ -154,7 +154,7 @@ export class LogsGateway {
     } catch (err) {
       // Fallback to console if file write fails
       console.error(
-        `[@nx-morpheus/logs-gateway] ${this.packageConfig.packageName}: Failed to write to log file (${this.config.logFilePath}):`,
+        `[logs-gateway] ${this.packageConfig.packageName}: Failed to write to log file (${this.config.logFilePath}):`,
         err
       );
     }

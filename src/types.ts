@@ -1,5 +1,5 @@
 /**
- * @nx-morpheus/logs-gateway - TypeScript Type Definitions
+ * logs-gateway - TypeScript Type Definitions
  * 
  * This file contains all TypeScript interfaces and types for the logs gateway package.
  */

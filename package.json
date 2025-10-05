@@ -1,5 +1,5 @@
 {
-  "name": "@nx-morpheus/logs-gateway",
+  "name": "logs-gateway",
   "version": "1.0.0",
   "description": "Standardized logging gateway for Node.js applications",
   "main": "dist/index.js",

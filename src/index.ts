@@ -1,5 +1,5 @@
 /**
- * @nx-morpheus/logs-gateway - Main Entry Point
+ * logs-gateway - Main Entry Point
  * 
  * This file exports all public APIs and provides the main factory function.
  */
@@ -31,7 +31,7 @@ import type { LoggerPackageConfig, LoggingConfig } from './types';
  *
  * @example
  * ```typescript
- * import { createLogger } from '@nx-morpheus/logs-gateway';
+ * import { createLogger } from 'logs-gateway';
  *
  * const logger = createLogger(
  *   { packageName: 'MY_APP', envPrefix: 'MY_APP', debugNamespace: 'my-app' },
