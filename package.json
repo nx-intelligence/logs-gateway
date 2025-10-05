@@ -1,0 +1,39 @@
+{
+  "name": "@nx-morpheus/logs-gateway",
+  "version": "1.0.0",
+  "description": "Standardized logging gateway for Node.js applications",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "logging",
+    "logger",
+    "typescript",
+    "node",
+    "console",
+    "file",
+    "json"
+  ],
+  "author": "nx-morpheus",
+  "license": "MIT",
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "typescript": ">=4.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "type": "commonjs"
+}
