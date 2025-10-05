@@ -21,9 +21,18 @@
   ],
   "author": "nx-morpheus",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nx-intelligence/logs-gateway.git"
+  },
+  "homepage": "https://github.com/nx-intelligence/logs-gateway#readme",
+  "bugs": {
+    "url": "https://github.com/nx-intelligence/logs-gateway/issues"
+  },
   "files": [
     "dist/**/*",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "devDependencies": {
     "@types/node": "^20.0.0",
