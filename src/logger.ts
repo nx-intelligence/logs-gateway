@@ -1,7 +1,7 @@
 /**
  * logs-gateway - Core LogsGateway Implementation
  * 
- * This file contains the main Logger class that handles all logging functionality.
+ * This file contains the main LogsGateway class that handles all logging functionality.
  */
 
 import * as fs from 'fs';
@@ -12,8 +12,10 @@ import {
   LoggingConfig,
   LoggerPackageConfig,
   LogEntry,
-  InternalLoggingConfig
+  InternalLoggingConfig,
+  LogMeta
 } from './types';
+import { UnifiedLoggerOutput } from './outputs/unified-logger-output';
 
 /**
  * Main LogsGateway class for handling all logging operations
@@ -27,12 +29,26 @@ export class LogsGateway {
     warn: 2,
     error: 3
   };
+  private sinks: {
+    console?: (level: LogLevel, msg: string, meta?: LogMeta) => void;
+    file?: (level: LogLevel, msg: string, meta?: LogMeta) => void;
+    unified?: UnifiedLoggerOutput;
+  };
 
-  constructor(packageConfig: LoggerPackageConfig, userConfig?: LoggingConfig) {
+  constructor(
+    packageConfig: LoggerPackageConfig, 
+    userConfig?: LoggingConfig,
+    sinks?: {
+      console?: (level: LogLevel, msg: string, meta?: LogMeta) => void;
+      file?: (level: LogLevel, msg: string, meta?: LogMeta) => void;
+      unified?: UnifiedLoggerOutput;
+    }
+  ) {
     this.packageConfig = packageConfig;
+    this.sinks = sinks || {};
    
     // Check DEBUG environment variable
-    const envPrefix = packageConfig.envPrefix;
+    const envPrefix = packageConfig.envPrefix || packageConfig.packageName;
     const debugEnabled = process.env.DEBUG?.includes(
       packageConfig.debugNamespace || packageConfig.packageName.toLowerCase()
     );
@@ -57,6 +73,13 @@ export class LogsGateway {
                  (process.env[`${envPrefix}_LOG_FORMAT`] as LogFormat) ??
                  'text',
      
+      enableUnifiedLogger: userConfig?.enableUnifiedLogger ??
+                          (process.env[`${envPrefix}_LOG_TO_UNIFIED`] === 'true'),
+
+      unifiedLogger: userConfig?.unifiedLogger ?? {},
+
+      defaultSource: userConfig?.defaultSource ?? 'application',
+
       packageName: packageConfig.packageName,
       ...(userConfig?.customLogger && { customLogger: userConfig.customLogger })
     };
@@ -106,16 +129,36 @@ export class LogsGateway {
   }
 
   /**
+   * Check if a specific output should receive the log based on routing metadata
+   */
+  private shouldSend(outputName: 'console' | 'file' | 'unified-logger', meta?: LogMeta): boolean {
+    // Block/allow by metadata
+    if (meta?._routing?.blockOutputs?.includes(outputName)) {
+      return false;
+    }
+    if (meta?._routing?.allowedOutputs && !meta._routing.allowedOutputs.includes(outputName)) {
+      return false;
+    }
+    
+    // Safety: gateway internal logs never escape to unified-logger
+    if (meta?.source === 'logs-gateway-internal' && outputName === 'unified-logger') {
+      return false;
+    }
+    
+    return true;
+  }
+
+  /**
    * Format a log entry according to the configured format
    */
-  private formatLogEntry(level: LogLevel, message: string, data?: any): string {
+  private formatLogEntry(level: LogLevel, message: string, meta?: LogMeta): string {
     const timestamp = new Date().toISOString();
     const logEntry: LogEntry = {
       timestamp,
       package: this.packageConfig.packageName,
       level: level.toUpperCase(),
       message,
-      ...(data !== undefined && { data })
+      ...(meta !== undefined && { data: meta })
     };
 
     if (this.config.logFormat === 'json') {
@@ -123,8 +166,8 @@ export class LogsGateway {
     } else {
       // Text format: [timestamp] [PACKAGE] [LEVEL] message
       let formatted = `[${timestamp}] [${this.packageConfig.packageName}] [${level.toUpperCase()}] ${message}`;
-      if (data !== undefined) {
-        formatted += ` ${typeof data === 'object' ? JSON.stringify(data) : data}`;
+      if (meta !== undefined) {
+        formatted += ` ${typeof meta === 'object' ? JSON.stringify(meta) : meta}`;
       }
       return formatted;
     }
@@ -163,24 +206,48 @@ export class LogsGateway {
   /**
    * Core logging method that handles all log output
    */
-  private log(level: LogLevel, message: string, data?: any): void {
+  private emit(level: LogLevel, message: string, meta?: LogMeta): void {
     // Check if we should log this level
     if (!this.shouldLog(level)) return;
 
     // Use custom logger if provided
     if (this.config.customLogger) {
-      this.config.customLogger[level](message, data);
+      this.config.customLogger[level](message, meta);
       return;
     }
 
-    // Format the log entry
-    const formattedMessage = this.formatLogEntry(level, message, data);
+    // Fill defaults without mutating caller object
+    const enriched: LogMeta = {
+      ...meta,
+      source: meta?.source ?? this.config.defaultSource ?? 'application'
+    };
 
-    // Write to console
-    this.writeToConsole(level, formattedMessage);
+    // Console output
+    if (this.config.logToConsole && this.shouldSend('console', enriched)) {
+      if (this.sinks.console) {
+        this.sinks.console(level, message, enriched);
+      } else {
+        // Fallback to default console behavior
+        const formattedMessage = this.formatLogEntry(level, message, enriched);
+        this.writeToConsole(level, formattedMessage);
+      }
+    }
 
-    // Write to file
-    this.writeToFile(formattedMessage);
+    // File output
+    if (this.config.logToFile && this.shouldSend('file', enriched)) {
+      if (this.sinks.file) {
+        this.sinks.file(level, message, enriched);
+      } else {
+        // Fallback to default file behavior
+        const formattedMessage = this.formatLogEntry(level, message, enriched);
+        this.writeToFile(formattedMessage);
+      }
+    }
+
+    // Unified logger output
+    if (this.config.enableUnifiedLogger && this.sinks.unified && this.shouldSend('unified-logger', enriched)) {
+      this.sinks.unified.write(level, message, enriched);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -190,29 +257,29 @@ export class LogsGateway {
   /**
    * Log debug message (only shown when logLevel is 'debug')
    */
-  debug(message: string, data?: any): void {
-    this.log('debug', message, data);
+  debug(message: string, data?: LogMeta): void {
+    this.emit('debug', message, data);
   }
 
   /**
    * Log informational message
    */
-  info(message: string, data?: any): void {
-    this.log('info', message, data);
+  info(message: string, data?: LogMeta): void {
+    this.emit('info', message, data);
   }
 
   /**
    * Log warning message
    */
-  warn(message: string, data?: any): void {
-    this.log('warn', message, data);
+  warn(message: string, data?: LogMeta): void {
+    this.emit('warn', message, data);
   }
 
   /**
    * Log error message
    */
-  error(message: string, data?: any): void {
-    this.log('error', message, data);
+  error(message: string, data?: LogMeta): void {
+    this.emit('error', message, data);
   }
 
   /**

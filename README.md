@@ -1,17 +1,20 @@
 # logs-gateway
 
-A standardized logging gateway for Node.js applications. Provides flexible logging with console output, file output, environment variable configuration, and custom logger injection.
+A standardized logging gateway for Node.js applications. Provides flexible logging with console output, file output, unified-logger integration, environment variable configuration, and custom logger injection.
 
 ## Features
 
 - ✅ **Console output** (default)
 - ✅ **File output** (optional)
-- ✅ **Dual output** (console + file)
+- ✅ **Unified-logger output** (Papertrail/UDP/Console via @x-developer/unified-logger)
+- ✅ **Dual/triple output** (console + file + unified-logger)
 - ✅ **Environment variable configuration**
 - ✅ **Custom logger injection** (Winston, Pino, etc.)
 - ✅ **Package-specific prefixes**
 - ✅ **Multiple log levels** (debug, info, warn, error)
 - ✅ **Multiple formats** (text, json)
+- ✅ **Routing metadata** (control output destinations)
+- ✅ **Recursion safety** (prevent circular logging)
 - ✅ **TypeScript support**
 
 ## Installation
@@ -28,7 +31,16 @@ import { createLogger } from 'logs-gateway';
 // Create a package-specific logger
 const logger = createLogger(
   { packageName: 'MY_APP', envPrefix: 'MY_APP' },
-  { logToFile: true, logFilePath: '/var/log/myapp.log' }
+  { 
+    logToFile: true, 
+    logFilePath: '/var/log/myapp.log',
+    enableUnifiedLogger: true,
+    unifiedLogger: {
+      transports: { papertrail: true },
+      service: 'my-app',
+      env: 'production'
+    }
+  }
 );
 
 // Use it
@@ -49,7 +61,14 @@ const logger = createLogger(
     logToFile: true,                 // default: false
     logFilePath: '/var/log/app.log', // required if logToFile
     logLevel: 'debug',               // debug|info|warn|error
-    logFormat: 'json'                // text|json
+    logFormat: 'json',               // text|json
+    enableUnifiedLogger: true,       // default: false
+    unifiedLogger: {                 // unified-logger config
+      transports: { papertrail: true },
+      service: 'my-service',
+      env: 'production'
+    },
+    defaultSource: 'my-app'          // default: 'application'
   }
 );
 ```
@@ -64,6 +83,9 @@ MY_APP_LOG_TO_CONSOLE=true|false
 MY_APP_LOG_TO_FILE=true|false
 MY_APP_LOG_FILE=/path/to/log
 
+# Unified-logger output
+MY_APP_LOG_TO_UNIFIED=true|false
+
 # Log level
 MY_APP_LOG_LEVEL=debug|info|warn|error
 
@@ -72,6 +94,12 @@ MY_APP_LOG_FORMAT=text|json
 
 # Debug mode (enables debug level)
 DEBUG=my-app-namespace
+
+# Unified-logger environment variables
+PAPERTRAIL_HOST=logs.papertrailapp.com
+PAPERTRAIL_PORT=12345
+UDP_RELAY_HOST=127.0.0.1
+UDP_RELAY_PORT=514
 ```
 
 ## Usage Examples
@@ -148,7 +176,45 @@ export class DatabaseService {
 }
 ```
 
-### Example 3: Custom Logger Integration (Winston)
+### Example 3: Unified-Logger with Papertrail
+
+```typescript
+import { createLogger } from 'logs-gateway';
+
+const logger = createLogger(
+  { packageName: 'WEB_APP', envPrefix: 'WEB_APP' },
+  {
+    enableUnifiedLogger: true,
+    unifiedLogger: {
+      transports: { 
+        papertrail: true,
+        console: false 
+      },
+      service: 'web-app',
+      env: 'production',
+      level: 'info'
+    }
+  }
+);
+
+// Basic logging with source and correlation
+logger.info('User login', { 
+  source: 'auth-service', 
+  correlationId: 'req-123',
+  userId: 'user-456' 
+});
+
+// Prevent recursion with routing metadata
+logger.info('Database operation completed', { 
+  source: 'database-service',
+  _routing: { 
+    blockOutputs: ['unified-logger'],
+    reason: 'prevent-recursion' 
+  }
+});
+```
+
+### Example 4: Custom Logger Integration (Winston)
 
 ```typescript
 import winston from 'winston';
@@ -176,11 +242,11 @@ const logger = createLogger(
 );
 ```
 
-### Example 4: Multiple Services Using the Same Gateway
+### Example 5: Multiple Services Using the Same Gateway
 
 Each service just needs:
 
-1. **Add dependency**: `"logs-gateway": "^1.0.0"`
+1. **Add dependency**: `"logs-gateway": "^1.1.0"`
 2. **Create factory**:
 
 ```typescript
@@ -216,6 +282,59 @@ export const logger = createLogger({ packageName: 'NOTIFICATIONS', envPrefix: 'N
 ```
 
 **Update logs-gateway once, all services benefit!**
+
+## Routing Metadata & Recursion Safety
+
+logs-gateway includes built-in routing metadata to control where logs are sent and prevent recursion:
+
+### Routing Metadata
+
+```typescript
+interface RoutingMeta {
+  allowedOutputs?: string[];  // e.g., ['unified-logger', 'console']
+  blockOutputs?: string[];    // e.g., ['unified-logger', 'file']
+  reason?: string;            // debugging aid
+  tags?: string[];            // optional hints
+}
+```
+
+### Usage Examples
+
+```typescript
+// Block specific outputs
+logger.info('Sensitive operation', {
+  source: 'auth-service',
+  _routing: {
+    blockOutputs: ['unified-logger'],
+    reason: 'sensitive-data'
+  }
+});
+
+// Allow only specific outputs
+logger.debug('Debug info', {
+  source: 'debug-service',
+  _routing: {
+    allowedOutputs: ['console'],
+    reason: 'debug-only'
+  }
+});
+
+// Prevent recursion
+logger.info('Database operation', {
+  source: 'database-service',
+  _routing: {
+    blockOutputs: ['unified-logger'],
+    reason: 'prevent-recursion'
+  }
+});
+```
+
+### Safety Features
+
+- **Gateway internal logs** (`source: 'logs-gateway-internal'`) never reach unified-logger
+- **Routing metadata** controls output destinations per log entry
+- **Recursion prevention** built into the routing system
+- **Graceful degradation** if unified-logger fails to initialize
 
 ## API Reference
 
