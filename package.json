@@ -1,6 +1,6 @@
 {
   "name": "logs-gateway",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Standardized logging gateway for Node.js applications",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
