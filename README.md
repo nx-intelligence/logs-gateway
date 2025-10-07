@@ -152,7 +152,7 @@ export class DatabaseService {
 
 ```typescript
 import winston from 'winston';
-import { createLogger, LoggingConfig } from '@nx-morpheus/logs-gateway';
+import { createLogger, LoggingConfig } from 'logs-gateway';
 
 const winstonLogger = winston.createLogger({
   level: 'info',
