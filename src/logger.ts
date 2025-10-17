@@ -283,6 +283,13 @@ export class LogsGateway {
   }
 
   /**
+   * Log success message (maps to INFO level)
+   */
+  success(message: string, data?: LogMeta): void {
+    this.emit('info', message, data);
+  }
+
+  /**
    * Get current logger configuration (for debugging/testing)
    */
   getConfig(): Readonly<InternalLoggingConfig> {

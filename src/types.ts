@@ -54,6 +54,7 @@ export interface CustomLogger {
   info: (message: string, data?: any) => void;
   warn: (message: string, data?: any) => void;
   error: (message: string, data?: any) => void;
+  success: (message: string, data?: any) => void;
 }
 
 /**
