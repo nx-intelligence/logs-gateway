@@ -82,7 +82,7 @@ export class ShadowSink implements ShadowController {
    */
   write(envelope: LogEnvelope, rawData: any): void {
     // Add to rolling buffer if configured
-    if (this.config.rollingBuffer.maxEntries > 0) {
+    if (this.config.rollingBuffer?.maxEntries && this.config.rollingBuffer.maxEntries > 0) {
       this.addToBuffer(envelope, rawData);
     }
 
@@ -292,7 +292,8 @@ export class ShadowSink implements ShadowController {
    * Add entry to rolling buffer
    */
   private addToBuffer(envelope: LogEnvelope, rawData: any): void {
-    const { maxEntries, maxAgeMs } = this.config.rollingBuffer;
+    const maxEntries = this.config.rollingBuffer?.maxEntries ?? 0;
+    const maxAgeMs = this.config.rollingBuffer?.maxAgeMs ?? 0;
 
     if (maxEntries === 0) {
       return;

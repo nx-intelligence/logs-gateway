@@ -1,7 +1,7 @@
 {
   "name": "logs-gateway",
-  "version": "1.2.0",
-  "description": "Standardized logging gateway for Node.js applications with PII sanitization and verbose logging",
+  "version": "1.3.0",
+  "description": "Standardized logging gateway for Node.js with PII sanitization, correlation trails, Shadow Logging for test/debug capture, and multi-format output (JSON/YAML/text)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -19,10 +19,18 @@
     "console",
     "file",
     "json",
+    "yaml",
     "sanitization",
     "pii",
     "security",
-    "privacy"
+    "privacy",
+    "shadow-logging",
+    "debug-capture",
+    "test-logging",
+    "correlation",
+    "tracing",
+    "opentelemetry",
+    "trails"
   ],
   "author": "nx-morpheus",
   "license": "MIT",
