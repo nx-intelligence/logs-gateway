@@ -16,6 +16,8 @@ import {
   LogMeta
 } from './types';
 import { UnifiedLoggerOutput } from './outputs/unified-logger-output';
+import { LogSanitizer } from './sanitizer';
+import { formatLogEntryAsYaml } from './formatters/yaml-formatter';
 
 /**
  * Main LogsGateway class for handling all logging operations
@@ -23,11 +25,13 @@ import { UnifiedLoggerOutput } from './outputs/unified-logger-output';
 export class LogsGateway {
   private config: InternalLoggingConfig;
   private packageConfig: LoggerPackageConfig;
+  private sanitizer: LogSanitizer;
   private levelPriority: Record<LogLevel, number> = {
-    debug: 0,
-    info: 1,
-    warn: 2,
-    error: 3
+    verbose: 0,
+    debug: 1,
+    info: 2,
+    warn: 3,
+    error: 4
   };
   private sinks: {
     console?: (level: LogLevel, msg: string, meta?: LogMeta) => void;
@@ -67,7 +71,7 @@ export class LogsGateway {
      
       logLevel: userConfig?.logLevel ??
                 (process.env[`${envPrefix}_LOG_LEVEL`] as LogLevel) ??
-                (debugEnabled ? 'debug' : 'info'),
+                (debugEnabled ? 'verbose' : 'info'),
      
       logFormat: userConfig?.logFormat ??
                  (process.env[`${envPrefix}_LOG_FORMAT`] as LogFormat) ??
@@ -79,6 +83,49 @@ export class LogsGateway {
       unifiedLogger: userConfig?.unifiedLogger ?? {},
 
       defaultSource: userConfig?.defaultSource ?? 'application',
+
+      sanitization: {
+        // Default: completely disabled
+        enabled: userConfig?.sanitization?.enabled ?? 
+                 (process.env[`${envPrefix}_SANITIZE_ENABLED`] === 'true'),
+        // Only set other options if sanitization is enabled
+        ...(userConfig?.sanitization?.enabled || process.env[`${envPrefix}_SANITIZE_ENABLED`] === 'true' ? {
+          maskWith: userConfig?.sanitization?.maskWith ?? 
+                    process.env[`${envPrefix}_SANITIZE_MASK`] ?? 
+                    '[REDACTED]',
+          partialMaskRatio: userConfig?.sanitization?.partialMaskRatio ?? 
+                           parseFloat(process.env[`${envPrefix}_SANITIZE_PARTIAL_RATIO`] ?? '1.0'),
+          maxDepth: userConfig?.sanitization?.maxDepth ?? 
+                   parseInt(process.env[`${envPrefix}_SANITIZE_MAX_DEPTH`] ?? '5'),
+          keysDenylist: userConfig?.sanitization?.keysDenylist ?? 
+                       (process.env[`${envPrefix}_SANITIZE_KEYS_DENYLIST`]?.split(',').map(k => k.trim()) ?? 
+                        ['authorization', 'token', 'secret', 'api_key', 'passwd', 'password']),
+          keysAllowlist: userConfig?.sanitization?.keysAllowlist ?? 
+                        (process.env[`${envPrefix}_SANITIZE_KEYS_ALLOWLIST`]?.split(',').map(k => k.trim()) ?? []),
+          fieldsHashInsteadOfMask: userConfig?.sanitization?.fieldsHashInsteadOfMask ?? 
+                                  (process.env[`${envPrefix}_SANITIZE_FIELDS_HASH`]?.split(',').map(k => k.trim()) ?? []),
+          detectEmails: userConfig?.sanitization?.detectEmails ?? 
+                       (process.env[`${envPrefix}_SANITIZE_DETECT_EMAILS`] !== 'false'),
+          detectIPs: userConfig?.sanitization?.detectIPs ?? 
+                    (process.env[`${envPrefix}_SANITIZE_DETECT_IPS`] !== 'false'),
+          detectPhoneNumbers: userConfig?.sanitization?.detectPhoneNumbers ?? 
+                             (process.env[`${envPrefix}_SANITIZE_DETECT_PHONES`] !== 'false'),
+          detectJWTs: userConfig?.sanitization?.detectJWTs ?? 
+                     (process.env[`${envPrefix}_SANITIZE_DETECT_JWTS`] !== 'false'),
+          detectAPIKeys: userConfig?.sanitization?.detectAPIKeys ?? 
+                        (process.env[`${envPrefix}_SANITIZE_DETECT_APIKEYS`] !== 'false'),
+          detectAWSCreds: userConfig?.sanitization?.detectAWSCreds ?? 
+                         (process.env[`${envPrefix}_SANITIZE_DETECT_AWSCREDS`] !== 'false'),
+          detectAzureKeys: userConfig?.sanitization?.detectAzureKeys ?? 
+                          (process.env[`${envPrefix}_SANITIZE_DETECT_AZUREKEYS`] !== 'false'),
+          detectGCPKeys: userConfig?.sanitization?.detectGCPKeys ?? 
+                        (process.env[`${envPrefix}_SANITIZE_DETECT_GCPKEYS`] !== 'false'),
+          detectPasswords: userConfig?.sanitization?.detectPasswords ?? 
+                          (process.env[`${envPrefix}_SANITIZE_DETECT_PASSWORDS`] !== 'false'),
+          detectCreditCards: userConfig?.sanitization?.detectCreditCards ?? 
+                            (process.env[`${envPrefix}_SANITIZE_DETECT_CREDITCARDS`] !== 'false')
+        } : {})
+      },
 
       packageName: packageConfig.packageName,
       ...(userConfig?.customLogger && { customLogger: userConfig.customLogger })
@@ -96,6 +143,9 @@ export class LogsGateway {
     if (this.config.logToFile && this.config.logFilePath) {
       this.ensureLogDirectory(this.config.logFilePath);
     }
+
+    // Initialize sanitizer
+    this.sanitizer = new LogSanitizer(this.config.sanitization);
   }
 
   // --------------------------------------------------------------------------
@@ -123,6 +173,16 @@ export class LogsGateway {
    * Check if a log level should be output based on current configuration
    */
   private shouldLog(level: LogLevel): boolean {
+    // Check DEBUG environment variable override
+    const debugEnabled = process.env.DEBUG?.includes(
+      this.packageConfig.debugNamespace || this.packageConfig.packageName.toLowerCase()
+    );
+    
+    // If DEBUG is enabled, allow verbose and debug levels regardless of configured level
+    if (debugEnabled && (level === 'verbose' || level === 'debug')) {
+      return true;
+    }
+    
     const currentLevelPriority = this.levelPriority[this.config.logLevel];
     const messageLevelPriority = this.levelPriority[level];
     return messageLevelPriority >= currentLevelPriority;
@@ -163,6 +223,21 @@ export class LogsGateway {
 
     if (this.config.logFormat === 'json') {
       return JSON.stringify(logEntry);
+    } else if (this.config.logFormat === 'yaml') {
+      // Convert LogEntry to LogEnvelope format for YAML
+      const envelope = {
+        timestamp: logEntry.timestamp,
+        package: logEntry.package,
+        level: logEntry.level,
+        message: logEntry.message,
+        source: meta?.source ?? this.config.defaultSource ?? 'application',
+        ...(logEntry.data && { data: logEntry.data }),
+        // Include other metadata fields if present
+        ...(meta?.correlationId && { correlationId: meta.correlationId }),
+        ...(meta?.tags && { tags: meta.tags }),
+        ...(meta?._routing && { _routing: meta._routing })
+      };
+      return formatLogEntryAsYaml(envelope);
     } else {
       // Text format: [timestamp] [PACKAGE] [LEVEL] message
       let formatted = `[${timestamp}] [${this.packageConfig.packageName}] [${level.toUpperCase()}] ${message}`;
@@ -210,25 +285,48 @@ export class LogsGateway {
     // Check if we should log this level
     if (!this.shouldLog(level)) return;
 
+    // Only sanitize if explicitly enabled
+    let sanitizedMessage = message;
+    let sanitizedMeta = meta;
+    let sanitizationResult = { 
+      sanitized: { message, data: meta }, 
+      redactionCount: 0, 
+      truncated: false 
+    };
+
+    if (this.config.sanitization.enabled) {
+      sanitizationResult = this.sanitizer.sanitize(message, meta);
+      sanitizedMessage = sanitizationResult.sanitized.message;
+      sanitizedMeta = sanitizationResult.sanitized.data;
+    }
+
     // Use custom logger if provided
     if (this.config.customLogger) {
-      this.config.customLogger[level](message, meta);
+      this.config.customLogger[level](sanitizedMessage, sanitizedMeta);
       return;
     }
 
     // Fill defaults without mutating caller object
     const enriched: LogMeta = {
-      ...meta,
-      source: meta?.source ?? this.config.defaultSource ?? 'application'
+      ...sanitizedMeta,
+      source: sanitizedMeta?.source ?? this.config.defaultSource ?? 'application'
     };
+
+    // Add sanitization metadata if any redactions occurred
+    if (sanitizationResult.redactionCount > 0) {
+      enriched._sanitization = {
+        redactionCount: sanitizationResult.redactionCount,
+        truncated: sanitizationResult.truncated
+      };
+    }
 
     // Console output
     if (this.config.logToConsole && this.shouldSend('console', enriched)) {
       if (this.sinks.console) {
-        this.sinks.console(level, message, enriched);
+        this.sinks.console(level, sanitizedMessage, enriched);
       } else {
         // Fallback to default console behavior
-        const formattedMessage = this.formatLogEntry(level, message, enriched);
+        const formattedMessage = this.formatLogEntry(level, sanitizedMessage, enriched);
         this.writeToConsole(level, formattedMessage);
       }
     }
@@ -236,17 +334,17 @@ export class LogsGateway {
     // File output
     if (this.config.logToFile && this.shouldSend('file', enriched)) {
       if (this.sinks.file) {
-        this.sinks.file(level, message, enriched);
+        this.sinks.file(level, sanitizedMessage, enriched);
       } else {
         // Fallback to default file behavior
-        const formattedMessage = this.formatLogEntry(level, message, enriched);
+        const formattedMessage = this.formatLogEntry(level, sanitizedMessage, enriched);
         this.writeToFile(formattedMessage);
       }
     }
 
     // Unified logger output
     if (this.config.enableUnifiedLogger && this.sinks.unified && this.shouldSend('unified-logger', enriched)) {
-      this.sinks.unified.write(level, message, enriched);
+      this.sinks.unified.write(level, sanitizedMessage, enriched);
     }
   }
 
@@ -255,7 +353,14 @@ export class LogsGateway {
   // --------------------------------------------------------------------------
 
   /**
-   * Log debug message (only shown when logLevel is 'debug')
+   * Log verbose message (only shown when logLevel is 'verbose' or 'debug')
+   */
+  verbose(message: string, data?: LogMeta): void {
+    this.emit('verbose', message, data);
+  }
+
+  /**
+   * Log debug message (only shown when logLevel is 'debug' or 'verbose')
    */
   debug(message: string, data?: LogMeta): void {
     this.emit('debug', message, data);

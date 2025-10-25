@@ -2,6 +2,9 @@
  * logs-gateway - Unified Logger Output Implementation
  * 
  * This file handles integration with @x-developer/unified-logger for Papertrail/UDP/Console output.
+ * 
+ * Note: This transport always receives structured data (JSON format) regardless of the 
+ * configured logFormat setting. YAML formatting only applies to console and file outputs.
  */
 
 import { initLogger, logger } from '@x-developer/unified-logger';

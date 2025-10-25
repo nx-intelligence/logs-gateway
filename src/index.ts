@@ -9,6 +9,7 @@ export type {
   LogLevel,
   LogFormat,
   LoggingConfig,
+  SanitizationConfig,
   CustomLogger,
   LoggerPackageConfig,
   LogEntry,
@@ -25,7 +26,8 @@ export { LogsGateway } from './logger';
 // Import LogsGateway for the factory function
 import { LogsGateway } from './logger';
 import { UnifiedLoggerOutput } from './outputs/unified-logger-output';
-import type { LoggerPackageConfig, LoggingConfig, LogLevel, LogMeta } from './types';
+import { formatLogEntryAsYaml } from './formatters/yaml-formatter';
+import type { LoggerPackageConfig, LoggingConfig, LogLevel, LogMeta, TransportsConfig, TracingConfig, TrailsConfig } from './types';
 
 /**
  * Create a package-specific logger instance
@@ -51,9 +53,13 @@ export function createLogger(
   userConfig?: LoggingConfig
 ): LogsGateway {
   // Resolve configuration with defaults
-  const resolved: Required<Omit<LoggingConfig, 'customLogger' | 'unifiedLogger'>> & {
+  const resolved: Required<Omit<LoggingConfig, 'customLogger' | 'unifiedLogger' | 'transports' | 'tracing' | 'trails' | 'schemaCheck'>> & {
     customLogger?: any;
     unifiedLogger?: any;
+    transports?: TransportsConfig | undefined;
+    tracing?: TracingConfig | undefined;
+    trails?: TrailsConfig | undefined;
+    schemaCheck?: { enabled?: boolean };
   } = {
     logToConsole: userConfig?.logToConsole ?? true,
     logToFile: userConfig?.logToFile ?? false,
@@ -63,7 +69,12 @@ export function createLogger(
     enableUnifiedLogger: userConfig?.enableUnifiedLogger ?? false,
     unifiedLogger: userConfig?.unifiedLogger ?? {},
     defaultSource: userConfig?.defaultSource ?? 'application',
-    customLogger: userConfig?.customLogger
+    sanitization: userConfig?.sanitization ?? {},
+    customLogger: userConfig?.customLogger,
+    transports: userConfig?.transports ?? undefined,
+    tracing: userConfig?.tracing ?? undefined,
+    trails: userConfig?.trails ?? undefined,
+    schemaCheck: userConfig?.schemaCheck ?? { enabled: false }
   };
 
   const sinks: any = {};
@@ -85,6 +96,21 @@ export function createLogger(
           delete payload.data._routing;
         }
         console.log(JSON.stringify(payload));
+      } else if (resolved.logFormat === 'yaml') {
+        // YAML format: create envelope and format as YAML
+        const envelope = {
+          timestamp: new Date().toISOString(),
+          package: packageConfig.packageName,
+          level: level.toUpperCase(),
+          message: msg,
+          source: meta?.source ?? resolved.defaultSource ?? 'application',
+          ...(meta && { data: meta }),
+          // Include other metadata fields if present
+          ...(meta?.correlationId && { correlationId: meta.correlationId }),
+          ...(meta?.tags && { tags: meta.tags }),
+          ...(meta?._routing && { _routing: meta._routing })
+        };
+        console.log(formatLogEntryAsYaml(envelope));
       } else {
         const ts = new Date().toISOString();
         const src = meta?.source ? `[${meta.source}] ` : '';
@@ -99,10 +125,30 @@ export function createLogger(
   if (resolved.logToFile && resolved.logFilePath) {
     sinks.file = (level: LogLevel, msg: string, meta?: LogMeta) => {
       try {
-        const ts = new Date().toISOString();
-        const src = meta?.source ? `[${meta.source}] ` : '';
-        const tail = meta ? ' ' + JSON.stringify(meta) : '';
-        const formatted = `[${ts}] [${packageConfig.packageName}] [${level.toUpperCase()}] ${src}${msg}${tail}`;
+        let formatted: string;
+        
+        if (resolved.logFormat === 'yaml') {
+          // YAML format: create envelope and format as YAML
+          const envelope = {
+            timestamp: new Date().toISOString(),
+            package: packageConfig.packageName,
+            level: level.toUpperCase(),
+            message: msg,
+            source: meta?.source ?? resolved.defaultSource ?? 'application',
+            ...(meta && { data: meta }),
+            // Include other metadata fields if present
+            ...(meta?.correlationId && { correlationId: meta.correlationId }),
+            ...(meta?.tags && { tags: meta.tags }),
+            ...(meta?._routing && { _routing: meta._routing })
+          };
+          formatted = formatLogEntryAsYaml(envelope);
+        } else {
+          // Text or JSON format (existing behavior)
+          const ts = new Date().toISOString();
+          const src = meta?.source ? `[${meta.source}] ` : '';
+          const tail = meta ? ' ' + JSON.stringify(meta) : '';
+          formatted = `[${ts}] [${packageConfig.packageName}] [${level.toUpperCase()}] ${src}${msg}${tail}`;
+        }
         
         const dir = require('path').dirname(resolved.logFilePath);
         if (!require('fs').existsSync(dir)) {
@@ -121,7 +167,7 @@ export function createLogger(
     sinks.unified = new UnifiedLoggerOutput(resolved.unifiedLogger!);
   }
 
-  return new LogsGateway(packageConfig, resolved, sinks);
+  return new LogsGateway(packageConfig, userConfig, sinks);
 }
 
 // Default export for convenience
