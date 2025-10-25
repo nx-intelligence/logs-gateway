@@ -89,6 +89,9 @@ export interface LoggingConfig {
   schemaCheck?: {
     enabled?: boolean;
   };
+
+  /** Shadow logging configuration */
+  shadow?: ShadowConfig;
 }
 
 /**
@@ -154,6 +157,11 @@ export interface LogMeta {
   correlationId?: string;
   /** Routing metadata for controlling output destinations */
   _routing?: RoutingMeta;
+  /** Shadow logging override metadata */
+  _shadow?: {
+    /** Override runId for shadow capture */
+    runId?: string;
+  };
 }
 
 /**
@@ -190,7 +198,7 @@ export interface UnifiedLoggerConfig {
 /**
  * Internal configuration type with all required fields
  */
-export type InternalLoggingConfig = Required<Omit<LoggingConfig, 'customLogger' | 'unifiedLogger' | 'transports' | 'tracing' | 'trails' | 'schemaCheck'>> & { 
+export type InternalLoggingConfig = Required<Omit<LoggingConfig, 'customLogger' | 'unifiedLogger' | 'transports' | 'tracing' | 'trails' | 'schemaCheck' | 'shadow'>> & { 
   customLogger?: CustomLogger;
   unifiedLogger?: UnifiedLoggerConfig;
   packageName: string;
@@ -198,6 +206,7 @@ export type InternalLoggingConfig = Required<Omit<LoggingConfig, 'customLogger' 
   tracing?: TracingConfig;
   trails?: TrailsConfig;
   schemaCheck?: { enabled?: boolean };
+  shadow?: ShadowConfig;
 };
 
 /**
@@ -214,6 +223,47 @@ export interface TrailsConfig {
   extractHeaders?: boolean;
   /** Maximum sequence number window for thread tracking */
   sequenceWindow?: number;
+}
+
+/**
+ * Shadow logging configuration for per-run debug capture
+ */
+export interface ShadowConfig {
+  /** Enable shadow logging (default: false) */
+  enabled?: boolean;
+  /** Output format for shadow files (default: 'json') */
+  format?: 'json' | 'yaml';
+  /** Directory for shadow files (default: './logs/shadow') */
+  directory?: string;
+  /** Time-to-live in milliseconds (default: 86400000 = 1 day) */
+  ttlMs?: number;
+  /** Respect routing blockOutputs metadata (default: true) */
+  respectRoutingBlocks?: boolean;
+  /** Rolling buffer for after-the-fact capture */
+  rollingBuffer?: {
+    /** Maximum number of entries to buffer (default: 0 = disabled) */
+    maxEntries?: number;
+    /** Maximum age of buffered entries in ms (default: 0 = disabled) */
+    maxAgeMs?: number;
+  };
+}
+
+/**
+ * Shadow controller interface for runtime management
+ */
+export interface ShadowController {
+  /** Enable shadow capture for a specific runId */
+  enable(runId: string, opts?: Partial<ShadowConfig>): void;
+  /** Disable shadow capture for a specific runId */
+  disable(runId: string): void;
+  /** Check if shadow capture is enabled for a runId */
+  isEnabled(runId: string): boolean;
+  /** List all active shadow captures */
+  listActive(): { runId: string; since: string; format: 'json' | 'yaml' }[];
+  /** Export shadow file to a destination path */
+  export(runId: string, outPath?: string): Promise<string>;
+  /** Clean up expired shadow files based on TTL */
+  cleanupExpired(now?: number): Promise<number>;
 }
 
 /**

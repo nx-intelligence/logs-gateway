@@ -17,7 +17,9 @@ export type {
   LogMeta,
   RoutingMeta,
   UnifiedLoggerConfig,
-  UnifiedLoggerTransports
+  UnifiedLoggerTransports,
+  ShadowConfig,
+  ShadowController
 } from './types';
 
 // Re-export the LogsGateway class
@@ -53,13 +55,14 @@ export function createLogger(
   userConfig?: LoggingConfig
 ): LogsGateway {
   // Resolve configuration with defaults
-  const resolved: Required<Omit<LoggingConfig, 'customLogger' | 'unifiedLogger' | 'transports' | 'tracing' | 'trails' | 'schemaCheck'>> & {
+  const resolved: Required<Omit<LoggingConfig, 'customLogger' | 'unifiedLogger' | 'transports' | 'tracing' | 'trails' | 'schemaCheck' | 'shadow'>> & {
     customLogger?: any;
     unifiedLogger?: any;
     transports?: TransportsConfig | undefined;
     tracing?: TracingConfig | undefined;
     trails?: TrailsConfig | undefined;
     schemaCheck?: { enabled?: boolean };
+    shadow?: any;
   } = {
     logToConsole: userConfig?.logToConsole ?? true,
     logToFile: userConfig?.logToFile ?? false,
@@ -74,7 +77,8 @@ export function createLogger(
     transports: userConfig?.transports ?? undefined,
     tracing: userConfig?.tracing ?? undefined,
     trails: userConfig?.trails ?? undefined,
-    schemaCheck: userConfig?.schemaCheck ?? { enabled: false }
+    schemaCheck: userConfig?.schemaCheck ?? { enabled: false },
+    shadow: userConfig?.shadow ?? undefined
   };
 
   const sinks: any = {};

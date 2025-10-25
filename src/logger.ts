@@ -13,11 +13,14 @@ import {
   LoggerPackageConfig,
   LogEntry,
   InternalLoggingConfig,
-  LogMeta
+  LogMeta,
+  LogEnvelope,
+  ShadowController
 } from './types';
 import { UnifiedLoggerOutput } from './outputs/unified-logger-output';
 import { LogSanitizer } from './sanitizer';
 import { formatLogEntryAsYaml } from './formatters/yaml-formatter';
+import { ShadowSink } from './outputs/shadow-sink';
 
 /**
  * Main LogsGateway class for handling all logging operations
@@ -26,6 +29,8 @@ export class LogsGateway {
   private config: InternalLoggingConfig;
   private packageConfig: LoggerPackageConfig;
   private sanitizer: LogSanitizer;
+  private shadowSink?: ShadowSink;
+  public readonly shadow: ShadowController;
   private levelPriority: Record<LogLevel, number> = {
     verbose: 0,
     debug: 1,
@@ -128,7 +133,8 @@ export class LogsGateway {
       },
 
       packageName: packageConfig.packageName,
-      ...(userConfig?.customLogger && { customLogger: userConfig.customLogger })
+      ...(userConfig?.customLogger && { customLogger: userConfig.customLogger }),
+      shadow: this.parseShadowConfig(envPrefix, userConfig?.shadow)
     };
 
     // Validate configuration
@@ -146,11 +152,55 @@ export class LogsGateway {
 
     // Initialize sanitizer
     this.sanitizer = new LogSanitizer(this.config.sanitization);
+
+    // Initialize shadow sink if enabled
+    if (this.config.shadow?.enabled) {
+      this.shadowSink = new ShadowSink(this.config.shadow, packageConfig.packageName);
+      this.shadow = this.shadowSink;
+    } else {
+      // No-op controller when shadow is disabled
+      this.shadow = this.createNoOpController();
+    }
   }
 
   // --------------------------------------------------------------------------
   // PRIVATE METHODS
   // --------------------------------------------------------------------------
+
+  /**
+   * Parse shadow configuration from user config and environment variables
+   */
+  private parseShadowConfig(envPrefix: string, userShadow?: any): any {
+    if (!userShadow && process.env[`${envPrefix}_SHADOW_ENABLED`] !== 'true') {
+      return undefined;
+    }
+
+    return {
+      enabled: userShadow?.enabled ?? (process.env[`${envPrefix}_SHADOW_ENABLED`] === 'true'),
+      format: userShadow?.format ?? (process.env[`${envPrefix}_SHADOW_FORMAT`] as 'json' | 'yaml') ?? 'json',
+      directory: userShadow?.directory ?? process.env[`${envPrefix}_SHADOW_DIR`] ?? './logs/shadow',
+      ttlMs: userShadow?.ttlMs ?? parseInt(process.env[`${envPrefix}_SHADOW_TTL_MS`] ?? '86400000'),
+      respectRoutingBlocks: userShadow?.respectRoutingBlocks ?? (process.env[`${envPrefix}_SHADOW_RESPECT_ROUTING`] !== 'false'),
+      rollingBuffer: {
+        maxEntries: userShadow?.rollingBuffer?.maxEntries ?? parseInt(process.env[`${envPrefix}_SHADOW_BUFFER_ENTRIES`] ?? '0'),
+        maxAgeMs: userShadow?.rollingBuffer?.maxAgeMs ?? parseInt(process.env[`${envPrefix}_SHADOW_BUFFER_AGE_MS`] ?? '0')
+      }
+    };
+  }
+
+  /**
+   * Create a no-op shadow controller for when shadow is disabled
+   */
+  private createNoOpController(): ShadowController {
+    return {
+      enable: () => {},
+      disable: () => {},
+      isEnabled: () => false,
+      listActive: () => [],
+      export: async () => { throw new Error('Shadow logging is not enabled'); },
+      cleanupExpired: async () => 0
+    };
+  }
 
   /**
    * Ensure the log directory exists, creating it if necessary
@@ -282,7 +332,30 @@ export class LogsGateway {
    * Core logging method that handles all log output
    */
   private emit(level: LogLevel, message: string, meta?: LogMeta): void {
-    // Check if we should log this level
+    // Build envelope for shadow capture BEFORE sanitization and level filtering
+    const timestamp = new Date().toISOString();
+    const rawEnvelope: LogEnvelope = {
+      timestamp,
+      package: this.packageConfig.packageName,
+      level: level.toUpperCase(),
+      message,
+      source: meta?.source ?? this.config.defaultSource ?? 'application',
+      ...(meta && { data: meta }),
+      // Extract known fields from meta
+      ...(meta?.correlationId && { correlationId: meta.correlationId }),
+      ...(meta?.jobId && { jobId: meta.jobId }),
+      ...(meta?.runId && { runId: meta.runId }),
+      ...(meta?.sessionId && { sessionId: meta.sessionId }),
+      ...(meta?._routing && { _routing: meta._routing }),
+      ...(meta?.tags && { tags: meta.tags })
+    };
+
+    // Shadow capture (raw, before sanitization, all levels)
+    if (this.shadowSink) {
+      this.shadowSink.write(rawEnvelope, meta);
+    }
+
+    // Check if we should log this level (for normal outputs)
     if (!this.shouldLog(level)) return;
 
     // Only sanitize if explicitly enabled

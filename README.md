@@ -396,6 +396,320 @@ const logger = createLogger(
 
 ---
 
+## Shadow Logging (Per-Run Debug Capture)
+
+Shadow Logging allows you to capture **all logs for a specific `runId`** to a separate file in JSON or YAML format, with **raw (unsanitized) data**, regardless of the global log level. This is ideal for debugging tests, CI runs, or specific production workflows.
+
+### Key Features
+
+- **Per-runId capture**: Enable capture for specific run identifiers
+- **Verbose by default**: Captures all log levels for the target runId
+- **Raw data**: Bypasses sanitization to preserve original values (⚠️ use with caution)
+- **Optional rolling buffer**: Capture logs from before shadow was enabled ("after-the-fact")
+- **TTL cleanup**: Automatically manage storage with time-to-live expiration
+- **No interference**: Shadow writes are async and won't affect primary logging
+
+### Quick Start
+
+```typescript
+import { createLogger } from 'logs-gateway';
+
+const logger = createLogger(
+  { packageName: 'TEST_RUNNER', envPrefix: 'TEST' },
+  {
+    shadow: {
+      enabled: true,
+      format: 'json',
+      directory: './logs/shadow',
+      ttlMs: 86400000, // 1 day
+      rollingBuffer: {
+        maxEntries: 2000,  // Keep last 2000 entries
+        maxAgeMs: 60000    // Drop entries older than 1 minute
+      }
+    }
+  }
+);
+
+// Enable shadow capture for a test run
+const runId = `test-${Date.now()}`;
+logger.shadow.enable(runId);
+
+// All logs with this runId will be captured to shadow
+logger.verbose('Detailed debug info', { runId, step: 1 });
+logger.debug('More debug', { runId, step: 2 });
+logger.info('Test started', { runId });
+logger.warn('Warning occurred', { runId });
+logger.error('Error details', { runId, error: new Error('fail') });
+
+// Export the captured logs
+await logger.shadow.export(runId, './test-artifacts/test-log.jsonl');
+
+// Disable capture when done
+logger.shadow.disable(runId);
+```
+
+### Configuration
+
+#### Constructor Options
+
+```typescript
+interface ShadowConfig {
+  enabled?: boolean;                 // default: false
+  format?: 'json' | 'yaml';          // default: 'json'
+  directory?: string;                // default: './logs/shadow'
+  ttlMs?: number;                    // default: 86400000 (1 day)
+  respectRoutingBlocks?: boolean;    // default: true
+  rollingBuffer?: {
+    maxEntries?: number;             // default: 0 (disabled)
+    maxAgeMs?: number;               // default: 0 (disabled)
+  };
+}
+```
+
+#### Environment Variables
+
+```bash
+# Enable shadow logging
+TEST_SHADOW_ENABLED=true
+
+# Output format (json or yaml)
+TEST_SHADOW_FORMAT=json
+
+# Shadow files directory
+TEST_SHADOW_DIR=./logs/shadow
+
+# Time-to-live in milliseconds
+TEST_SHADOW_TTL_MS=86400000
+
+# Respect routing blocks (file/shadow)
+TEST_SHADOW_RESPECT_ROUTING=true
+
+# Rolling buffer settings
+TEST_SHADOW_BUFFER_ENTRIES=2000
+TEST_SHADOW_BUFFER_AGE_MS=60000
+```
+
+### Runtime API
+
+#### `logger.shadow.enable(runId, opts?)`
+
+Enable shadow capture for a specific runId. Optionally override config for this run.
+
+```typescript
+logger.shadow.enable('test-run-123');
+
+// Or with custom options
+logger.shadow.enable('test-run-yaml', {
+  format: 'yaml',
+  ttlMs: 3600000  // 1 hour
+});
+```
+
+#### `logger.shadow.disable(runId)`
+
+Stop capturing logs for a runId and finalize the shadow file.
+
+```typescript
+logger.shadow.disable('test-run-123');
+```
+
+#### `logger.shadow.isEnabled(runId)`
+
+Check if shadow capture is active for a runId.
+
+```typescript
+if (logger.shadow.isEnabled('test-run-123')) {
+  console.log('Shadow capture is active');
+}
+```
+
+#### `logger.shadow.listActive()`
+
+List all currently active shadow captures.
+
+```typescript
+const active = logger.shadow.listActive();
+// Returns: [{ runId: 'test-run-123', since: '2025-10-25T10:30:00Z', format: 'json' }]
+```
+
+#### `logger.shadow.export(runId, outPath?)`
+
+Copy the shadow file to a destination path.
+
+```typescript
+// Export to current directory with default name
+const path = await logger.shadow.export('test-run-123');
+
+// Export to specific path
+await logger.shadow.export('test-run-123', './artifacts/test-log.jsonl');
+```
+
+#### `logger.shadow.cleanupExpired(now?)`
+
+Delete expired shadow files based on TTL. Returns number of deleted runs.
+
+```typescript
+// Clean up expired runs
+const deletedCount = await logger.shadow.cleanupExpired();
+console.log(`Deleted ${deletedCount} expired shadow runs`);
+
+// Or simulate cleanup at a specific time
+const futureTime = Date.now() + 86400000;
+await logger.shadow.cleanupExpired(futureTime);
+```
+
+### Storage Structure
+
+Shadow files are organized per-runId in the configured directory:
+
+```
+./logs/shadow/
+  test-run-123/
+    index.json              # Manifest with metadata
+    test-run-123.jsonl      # All logs for this run (or .yaml)
+  test-run-456/
+    index.json
+    test-run-456.jsonl
+```
+
+**index.json** contains:
+
+```json
+{
+  "runId": "test-run-123",
+  "createdAt": "2025-10-25T10:30:00.000Z",
+  "updatedAt": "2025-10-25T10:35:31.000Z",
+  "ttlMs": 86400000,
+  "format": "json",
+  "entryCount": 1234,
+  "filePath": "test-run-123.jsonl",
+  "meta": {
+    "host": "ci-runner-03",
+    "pid": 1423,
+    "package": "TEST_RUNNER"
+  }
+}
+```
+
+### Usage Patterns
+
+#### 1. CI/Test Runner Integration
+
+```typescript
+// test-setup.ts
+import { createLogger } from 'logs-gateway';
+
+export const logger = createLogger(
+  { packageName: 'CI_TESTS', envPrefix: 'CI' },
+  {
+    shadow: {
+      enabled: process.env.CI === 'true',
+      directory: './test-artifacts/shadow',
+      format: 'json'
+    }
+  }
+);
+
+// test-suite.test.ts
+import { logger } from './test-setup';
+
+describe('Payment Flow', () => {
+  const runId = `payment-test-${Date.now()}`;
+  
+  beforeAll(() => {
+    logger.shadow.enable(runId);
+  });
+  
+  afterAll(async () => {
+    await logger.shadow.export(runId, `./artifacts/${runId}.jsonl`);
+    logger.shadow.disable(runId);
+  });
+  
+  it('should process payment', () => {
+    logger.info('Starting payment', { runId, amount: 100 });
+    // ... test logic ...
+  });
+});
+```
+
+#### 2. After-the-Fact Debugging
+
+```typescript
+// Start with rolling buffer enabled
+const logger = createLogger(
+  { packageName: 'API', envPrefix: 'API' },
+  {
+    shadow: {
+      enabled: true,
+      rollingBuffer: {
+        maxEntries: 2000,
+        maxAgeMs: 60000  // Last 1 minute
+      }
+    }
+  }
+);
+
+// Application runs normally...
+logger.info('Request received', { runId: 'req-123' });
+logger.debug('Processing', { runId: 'req-123' });
+
+// Error occurs - enable shadow capture retroactively
+logger.error('Payment failed!', { runId: 'req-123' });
+logger.shadow.enable('req-123');  // Flushes last 2000 buffered logs for req-123
+```
+
+#### 3. Per-Entry Shadow Override
+
+```typescript
+// Force a specific log to a shadow file without enabling for the whole run
+logger.info('Sensitive operation', {
+  runId: 'prod-request-456',
+  _shadow: { runId: 'debug-capture' }  // Capture to debug-capture shadow
+});
+```
+
+### Important Considerations
+
+⚠️ **Security**: Shadow captures **raw, unsanitized data**. This means passwords, API keys, and PII will be preserved in shadow files. Only use shadow logging in secure environments (development, CI, isolated test systems).
+
+💾 **Storage**: Shadow files can grow quickly when capturing verbose logs. Configure appropriate `ttlMs` values and regularly run `cleanupExpired()`.
+
+🚫 **Default OFF**: Shadow logging is disabled by default and must be explicitly enabled via config or environment variables.
+
+✅ **Recommended Use Cases**:
+- Debugging CI/test failures with full context
+- Capturing verbose logs for specific problematic requests in staging
+- Temporary deep-dive debugging in development
+
+❌ **Not Recommended**:
+- Production systems with sensitive data (unless isolated)
+- Long-running services without TTL cleanup
+- High-throughput systems (performance impact)
+
+### Routing and Blocking
+
+Shadow respects `_routing.blockOutputs` metadata by default:
+
+```typescript
+// This log won't be captured to shadow
+logger.info('Internal log', {
+  runId: 'test-123',
+  _routing: {
+    blockOutputs: ['shadow', 'file']
+  }
+});
+
+// Override routing blocks for specific captures
+const logger = createLogger(pkg, {
+  shadow: {
+    enabled: true,
+    respectRoutingBlocks: false  // Capture everything
+  }
+});
+```
+
+---
+
 ## Environment Variables (summary)
 
 | Key                    | Description                            | Default   |       |        |        |        |
