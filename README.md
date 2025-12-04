@@ -1,10 +1,6 @@
-Here’s a rewritten README that folds in **YAML output**, **five levels (incl. `verbose`)**, **dual trails (Depth & Thread)**, **OTel context**, and the new **Shadow Logging (per-run capture)** — while keeping all existing behaviors.
-
----
-
 # logs-gateway
 
-A standardized logging gateway for Node.js applications. Flexible multi-transport logging with **console**, **file**, and **unified-logger** outputs; **ENV-first** configuration; **PII/credentials sanitization**; **dual correlation trails** (operation & thread); **OpenTelemetry** context; **YAML/JSON/text** formats; and **per-run “Shadow Logging”** for test/debug capture.
+A standardized logging gateway for Node.js applications. Flexible multi-transport logging with **console**, **file**, and **unified-logger** outputs; **ENV-first** configuration; **PII/credentials sanitization**; **dual correlation trails** (operation & thread); **OpenTelemetry** context; **YAML/JSON/text** formats; **per-run "Shadow Logging"** for test/debug capture; **scoping** with text filters; **story output** powered by `scopeRecord`; and **troubleshooting integration** with `nx-troubleshooting`.
 
 ## Features
 
@@ -24,6 +20,9 @@ A standardized logging gateway for Node.js applications. Flexible multi-transpor
 * ✅ Recursion safety (prevent circular/unified feedback)
 * ✅ TypeScript support
 * ✅ **Shadow Logging (per-run capture)** with TTL & forced-verbose, great for tests
+* ✅ **Scoping** – Derive focused subsets of logs with text filters and correlation keys
+* ✅ **Story Output** – Human-readable narrative format built automatically from log entries
+* ✅ **Troubleshooting Integration** – Wire in `nx-troubleshooting` for intelligent error-to-solution matching
 
 ---
 
@@ -31,6 +30,12 @@ A standardized logging gateway for Node.js applications. Flexible multi-transpor
 
 ```bash
 npm install logs-gateway
+```
+
+For troubleshooting integration:
+
+```bash
+npm install logs-gateway nx-troubleshooting
 ```
 
 ---
@@ -54,7 +59,18 @@ const logger = createLogger(
       env: 'production'
     },
     // Optional: per-run Shadow Logging defaults (can also be enabled at runtime)
-    shadow: { enabled: false, ttlMs: 86_400_000 } // 1 day
+    shadow: { enabled: false, ttlMs: 86_400_000 }, // 1 day
+    // Optional: Scoping & Troubleshooting
+    scoping: {
+      enabled: true,
+      errorScoping: { enabled: true, windowMsBefore: 60_000, windowMsAfter: 30_000 },
+      buffer: { maxEntries: 5000, preferShadow: true }
+    },
+    troubleshooting: {
+      enabled: true,
+      narrativesPath: './metadata/troubleshooting.json',
+      output: { formats: ['markdown'], emitAsLogEntry: true }
+    }
   }
 );
 
@@ -65,6 +81,31 @@ logger.info('Application initialized', { version: '1.0.0' });
 logger.warn('Deprecated feature used');
 logger.error('Error occurred', { error: new Error('boom') });
 ```
+
+---
+
+## Overview: Scoping, Story Output & Troubleshooting
+
+This extension adds three major capabilities:
+
+1. **Scoping** – Given a verbose log stream, derive a **focused subset** of logs relevant to a problem or question. Scopes can be:
+   * Error-centric (anchor on a specific `error` entry)
+   * Run/Correlation-centric (anchor on `runId`, `correlationId`, etc.)
+   * Text-based (filter by message/data content)
+   * Narrative-based (optional, driven by "scoping narratives")
+
+   Scoping **always uses verbose logs** if available, regardless of the current log level.
+
+2. **Story vs Full Data Output** – A scope can be returned as:
+   * **Full data**: structured `ScopedLogView` with all entries
+   * **Story**: human-readable narrative built automatically from entries using a generic `scopeRecord` helper
+   * Or **both**
+
+3. **Troubleshooting Integration** – Wire in `nx-troubleshooting` so that errors/scopes:
+   * Are matched to **troubleshooting narratives**, and
+   * Produce troubleshooting artifacts (Markdown/JSON/text) as **another log output channel** (`troubleshooting`)
+
+The same `scopeRecord` helper is also exported as a **generic tool** for scoping arbitrary JSON records (not just logs).
 
 ---
 
@@ -117,6 +158,49 @@ const logger = createLogger(
       respectRoutingBlocks: true,    // honor _routing.blockOutputs: ['shadow'|'file']
       includeRaw: false,             // also write unsanitized (dangerous; tests only)
       rollingBuffer: { maxEntries: 0, maxAgeMs: 0 } // optional retro-capture
+    },
+
+    // Scoping (opt-in)
+    scoping: {
+      enabled: false,                // default: false
+      errorScoping: {
+        enabled: true,               // default: true if scoping.enabled
+        levels: ['error'],           // default: ['error']
+        windowMsBefore: 30_000,     // default: 30_000
+        windowMsAfter: 30_000        // default: 30_000
+      },
+      runScoping: {
+        enabled: true,               // default: true if scoping.enabled
+        defaultWindowMsBeforeFirstError: 60_000,
+        defaultWindowMsAfterLastEntry: 30_000
+      },
+      narrativeScoping: {
+        enabled: false,              // default: false
+        narrativesPath: './metadata/log-scopes.json',
+        envPrefix: 'NX_SCOPE'
+      },
+      buffer: {
+        maxEntries: 0,               // default: 0 => disabled if Shadow is enough
+        maxAgeMs: 0,
+        includeLevels: ['verbose','debug','info','warn','error'],
+        preferShadow: true           // default: true
+      }
+    },
+
+    // Troubleshooting (opt-in, requires nx-troubleshooting)
+    troubleshooting: {
+      enabled: false,                // default: false
+      narrativesPath: './metadata/troubleshooting.json',
+      envPrefix: 'NX_TROUBLE',
+      loggingConfig: { /* optional */ },
+      engine: undefined,             // optional DI
+      output: {
+        formats: ['markdown'],       // default: ['markdown']
+        writeToFileDir: undefined,
+        attachToShadow: false,
+        emitAsLogEntry: false,
+        callback: undefined
+      }
     }
   }
 );
@@ -161,6 +245,21 @@ MY_APP_SHADOW_RESPECT_ROUTING=true|false
 MY_APP_SHADOW_INCLUDE_RAW=false
 MY_APP_SHADOW_BUFFER_ENTRIES=0
 MY_APP_SHADOW_BUFFER_AGE_MS=0
+
+# Scoping
+MY_APP_SCOPING_ENABLED=true|false
+MY_APP_SCOPING_ERROR_ENABLED=true|false
+MY_APP_SCOPING_ERROR_WINDOW_MS_BEFORE=30000
+MY_APP_SCOPING_ERROR_WINDOW_MS_AFTER=30000
+MY_APP_SCOPING_BUFFER_ENTRIES=5000
+MY_APP_SCOPING_BUFFER_AGE_MS=300000
+MY_APP_SCOPING_BUFFER_PREFER_SHADOW=true|false
+
+# Troubleshooting
+MY_APP_TROUBLESHOOTING_ENABLED=true|false
+MY_APP_TROUBLESHOOTING_NARRATIVES_PATH=./metadata/troubleshooting.json
+MY_APP_TROUBLESHOOTING_OUTPUT_FORMATS=markdown,json
+MY_APP_TROUBLESHOOTING_OUTPUT_EMIT_AS_LOG_ENTRY=true|false
 ```
 
 > **Default min level:** `info`.
@@ -168,9 +267,406 @@ MY_APP_SHADOW_BUFFER_AGE_MS=0
 
 ---
 
+## Core Types
+
+### LogEntry
+
+Internal normalized log shape:
+
+```ts
+export interface LogEntry {
+  timestamp: string;  // ISO-8601
+  level: 'verbose' | 'debug' | 'info' | 'warn' | 'error';
+  package: string;
+  message: string;
+  source?: string;             // e.g. 'application', 'auth-service'
+  data?: Record<string, any>;  // user metadata, error, ids, etc.
+  
+  // Correlation / trails / tracing
+  runId?: string;
+  jobId?: string;
+  correlationId?: string;
+  sessionId?: string;
+  operationId?: string;
+  parentOperationId?: string;
+  operationName?: string;
+  threadId?: string;
+  traceId?: string;
+  spanId?: string;
+  
+  // Routing
+  _routing?: RoutingMeta;
+  
+  // Optional scope metadata (for future/advanced use)
+  scope?: ScopedMetadata;
+}
+```
+
+### ScopeCriteria
+
+Scoping criteria defines *which logs* belong to a scope. It supports:
+
+* Correlation keys
+* Time windows
+* Levels
+* Sources
+* **Text matching on message and data**
+
+```ts
+export interface ScopeCriteria {
+  // Correlation / keys
+  runId?: string;
+  correlationId?: string;
+  sessionId?: string;
+  threadId?: string;
+  traceId?: string;
+  
+  // Time window bounds
+  fromTimestamp?: string;      // ISO-8601
+  toTimestamp?: string;        // ISO-8601
+  
+  // Window relative to an anchor (error or first/last entry)
+  windowMsBefore?: number;     // relative to anchor timestamp
+  windowMsAfter?: number;
+  
+  // Levels
+  levelAtLeast?: 'verbose' | 'debug' | 'info' | 'warn' | 'error';
+  includeLevels?: ('verbose'|'debug'|'info'|'warn'|'error')[];
+  
+  // Source filters
+  sources?: string[];          // e.g. ['api-gateway','payments-service']
+  
+  // TEXT FILTERS
+  /**
+   * Match logs whose message OR data (stringified) contains ANY of the given strings (case-insensitive).
+   * - string: single substring
+   * - string[]: log must contain at least one of them
+   */
+  textIncludesAny?: string | string[];
+  
+  /**
+   * Match logs whose message OR data (stringified) contains ALL of the given substrings (case-insensitive).
+   */
+  textIncludesAll?: string[];
+  
+  /**
+   * Optional RegExp filter over the combined text (message + JSON-stringified data).
+   * If provided as string, it is treated as a new RegExp(text, 'i').
+   */
+  textMatches?: RegExp | string;
+  
+  // Scope metadata filters (if used)
+  scopeTags?: string[];        // must include all provided tags
+  
+  // Custom predicate for in-process advanced filtering
+  predicate?: (entry: LogEntry) => boolean;
+}
+```
+
+**Text filtering behavior:**
+
+* Combine `entry.message` and a JSON string of `entry.data` into one string (e.g. `"Payment failed {...}"`).
+* Apply:
+  * `textIncludesAny` – inclusive OR.
+  * `textIncludesAll` – inclusive AND.
+  * `textMatches` – regex test.
+* All text filtering is **case-insensitive** by default.
+* Text filters are **ANDed** with other criteria (correlation, time, etc.).
+
+### ScopedLogView (full data)
+
+```ts
+export interface ScopedLogView {
+  id: string;                    // e.g. 'scope:runId:checkout-42'
+  criteria: ScopeCriteria;
+  entries: LogEntry[];           // sorted by timestamp ascending
+  summary: {
+    firstTimestamp?: string;
+    lastTimestamp?: string;
+    totalCount: number;
+    errorCount: number;
+    warnCount: number;
+    infoCount: number;
+    debugCount: number;
+    verboseCount: number;
+    uniqueSources: string[];
+  };
+}
+```
+
+### scopeRecord – Generic Tool
+
+The `scopeRecord` helper is **generic** (not log-specific): given any JSON record, it produces:
+
+* A human-readable text description ("story" of the record).
+* A structured description (fields, truncation info).
+
+This function is:
+* Used internally to build **scope stories** from `LogEntry`s / aggregated records.
+* Exported publicly so other code can reuse it for non-log use cases.
+
+```ts
+import { scopeRecord } from 'logs-gateway';
+
+// Example usage
+const record = {
+  userId: '123',
+  action: 'payment',
+  amount: 100.50,
+  timestamp: '2025-01-01T10:00:00Z'
+};
+
+const result = scopeRecord(record, {
+  label: 'Payment Event',
+  maxFieldStringLength: 200,
+  excludeKeys: ['password', 'token']
+});
+
+console.log(result.text);
+// Output: "Payment Event\n  User ID: 123\n  Action: payment\n  Amount: 100.5\n  Timestamp: 2025-01-01T10:00:00Z"
+
+console.log(result.structured);
+// Output: { label: 'Payment Event', fields: [...], ... }
+```
+
+**Types:**
+
+```ts
+export interface AutoScopeRecordOptions {
+  label?: string;
+  formatting?: ScopingFormattingOptions;
+  maxFields?: number;
+  maxFieldStringLength?: number;
+  includeKeys?: string[];
+  excludeKeys?: string[];
+  skipNullish?: boolean;
+  header?: string;
+  footer?: string;
+}
+
+export interface ScopeRecordResult {
+  text: string;                    // Human-readable text output
+  structured: StructuredScopedPayload;  // Structured representation
+}
+```
+
+### Scope Story Output
+
+To let a scope answer with full data or story format:
+
+```ts
+export type ScopeOutputMode = 'raw' | 'story' | 'both';
+
+export interface ScopeStoryOptions {
+  recordOptions?: AutoScopeRecordOptions;
+  maxEntries?: number;
+  includeEntryHeader?: boolean;
+}
+
+export interface ScopeLogsResult {
+  view: ScopedLogView;         // always present
+  story?: ScopedLogStory;      // present if mode = 'story' or 'both'
+}
+```
+
+---
+
+## API Reference
+
+### `createLogger(packageConfig, userConfig?) → LogsGateway`
+
+### `LogsGateway` Methods
+
+#### Standard Logging
+
+* `verbose(message, data?)`
+* `debug(message, data?)`
+* `info(message, data?)`
+* `warn(message, data?)`
+* `error(message, data?)`
+* `isLevelEnabled(level)` – threshold check (namespace DEBUG forces verbose+debug)
+* `getConfig()` – effective resolved config
+
+#### Scoping
+
+* `scopeLogs(criteria, options?)` – Scope logs by criteria, return full data and/or story
+
+```ts
+const result = await logger.scopeLogs({
+  runId: 'checkout-42',
+  textIncludesAny: 'timeout',
+  levelAtLeast: 'debug'
+}, {
+  mode: 'both',
+  storyOptions: {
+    maxEntries: 50,
+    includeEntryHeader: true,
+    recordOptions: {
+      label: 'Log Entry',
+      maxFieldStringLength: 200
+    }
+  }
+});
+
+console.log(result.view.summary);
+console.log(result.story?.text);
+```
+
+#### Troubleshooting
+
+* `troubleshootError(error, context?, options?)` – Error-centric troubleshooting
+
+```ts
+const { scope, reports } = await logger.troubleshootError(
+  new Error('Missing connections configuration'),
+  {
+    config: { /* app config */ },
+    query: { requestId: req.id },
+    operation: 'checkout'
+  },
+  {
+    formats: ['markdown'],
+    generateScopeStory: true,
+    storyOptions: { /* ... */ }
+  }
+);
+```
+
+* `troubleshootScope(scope, options?)` – Scope-centric troubleshooting
+
+```ts
+const { scope: scopeResult, reports } = await logger.troubleshootScope(
+  scopeView,  // or ScopeCriteria or scope id string
+  {
+    formats: ['markdown', 'json'],
+    generateScopeStory: true
+  }
+);
+```
+
+* `scopeByNarratives(options?)` – Narrative-based scoping (optional)
+
+### Shadow Controller
+
+* `logger.shadow.enable(runId, opts?)`
+* `logger.shadow.disable(runId)`
+* `logger.shadow.isEnabled(runId)`
+* `logger.shadow.listActive()`
+* `logger.shadow.export(runId, outPath?, compress?) → Promise<string>`
+* `logger.shadow.readIndex(runId) → Promise<ShadowIndex>`
+* `logger.shadow.cleanupExpired(now?) → Promise<number>`
+
+*(Shadow writes sidecar files; primary transports unaffected.)*
+
+---
+
 ## Usage Examples
 
-### 1) Web Application
+### 1) Error → Scoped logs (text filter) → Story + Troubleshooting
+
+```ts
+import { createLogger, scopeRecord } from 'logs-gateway';
+
+const logger = createLogger(
+  { packageName: 'PAYMENTS', envPrefix: 'PAY' },
+  {
+    logToConsole: true,
+    logFormat: 'json',
+    shadow: {
+      enabled: true,
+      format: 'json',
+      directory: './logs/shadow',
+      ttlMs: 86400000,
+      forceVerbose: true
+    },
+    scoping: {
+      enabled: true,
+      errorScoping: {
+        enabled: true,
+        windowMsBefore: 60_000,
+        windowMsAfter: 30_000
+      },
+      buffer: {
+        maxEntries: 5000,
+        maxAgeMs: 300_000,
+        includeLevels: ['verbose','debug','info','warn','error'],
+        preferShadow: true
+      }
+    },
+    troubleshooting: {
+      enabled: true,
+      narrativesPath: './metadata/troubleshooting.json',
+      output: {
+        formats: ['markdown'],
+        emitAsLogEntry: true,
+        writeToFileDir: './logs/troubleshooting'
+      }
+    }
+  }
+);
+
+async function handleCheckout(req: any) {
+  const runId = `checkout-${Date.now()}`;
+  logger.info('Checkout started', { runId });
+  logger.verbose('Preparing payment context', { runId });
+  
+  try {
+    // ...
+    throw new Error('Missing connections configuration');
+  } catch (error) {
+    // Direct troubleshooting call
+    const { scope, reports } = await logger.troubleshootError(error, {
+      config: { /* app config */ },
+      query: { requestId: req.id },
+      operation: 'checkout'
+    }, {
+      formats: ['markdown'],
+      generateScopeStory: true,
+      storyOptions: {
+        maxEntries: 50,
+        includeEntryHeader: true,
+        recordOptions: {
+          label: 'Log Entry',
+          maxFieldStringLength: 200,
+          excludeKeys: ['password', 'token']
+        }
+      }
+    });
+    
+    // Scope includes full data + story
+    console.log(scope?.view.summary);
+    console.log(scope?.story?.text);
+    
+    // Reports contain troubleshooting text
+    return {
+      ok: false,
+      troubleshooting: reports.map(r => r.rendered)
+    };
+  }
+}
+```
+
+### 2) Manual scoping by text ("include any log that mentions X")
+
+```ts
+// Scope all logs in the last 5 minutes that mention "timeout" anywhere:
+const timeoutScope = await logger.scopeLogs({
+  levelAtLeast: 'debug',
+  fromTimestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+  textIncludesAny: 'timeout'  // message or data, case-insensitive
+}, {
+  mode: 'both',
+  storyOptions: {
+    includeEntryHeader: true,
+    recordOptions: { label: 'Timeout Log' }
+  }
+});
+
+console.log(timeoutScope.view.summary);
+console.log(timeoutScope.story?.text);
+```
+
+### 3) Web Application
 
 ```ts
 // src/logger.ts
@@ -194,60 +690,7 @@ async function handleRequest(request: any) {
 }
 ```
 
-### 2) Database Service
-
-```ts
-const dbLogger = createLogger(
-  { packageName: 'DATABASE_SERVICE', envPrefix: 'DB_SERVICE', debugNamespace: 'db' }
-);
-
-dbLogger.info('Database service initialized');
-dbLogger.debug('Executing query', { sql: 'select 1' });
-```
-
-### 3) Unified-Logger with Papertrail
-
-```ts
-const logger = createLogger(
-  { packageName: 'WEB_APP', envPrefix: 'WEB_APP' },
-  {
-    enableUnifiedLogger: true,
-    unifiedLogger: {
-      transports: { papertrail: true, console: false },
-      service: 'web-app',
-      env: 'production',
-      level: 'info'
-    }
-  }
-);
-
-// Correlation + routing
-logger.info('User login', {
-  source: 'auth-service',
-  correlationId: 'req-123',
-  runId: 'test-001'
-});
-
-logger.info('Sensitive DB op', {
-  source: 'database',
-  _routing: { blockOutputs: ['unified-logger'], reason: 'sensitive-data' }
-});
-```
-
-### 4) YAML Format (dev-friendly)
-
-```ts
-const logger = createLogger(
-  { packageName: 'PAYMENTS', envPrefix: 'PAY' },
-  { logFormat: 'yaml', logToConsole: true, logToFile: true, logFilePath: '/var/log/payments-dev.log' }
-);
-
-logger.info('Reserved all', { count: 3, tags: ['checkout'] });
-// Console/file: multi-doc YAML with `---` separators
-// Unified-logger (if enabled): still JSON
-```
-
-### 5) **Shadow Logging** (per-run capture)
+### 4) Shadow Logging (per-run capture)
 
 Capture everything for a **specific `runId`** to a side file (forced-verbose), then fetch it — perfect for tests.
 
@@ -296,7 +739,7 @@ Every log entry automatically merges the current trail context. The library prov
 ```ts
 interface RoutingMeta {
   allowedOutputs?: string[];  // e.g. ['unified-logger','console']
-  blockOutputs?: string[];    // e.g. ['unified-logger','file','shadow']
+  blockOutputs?: string[];    // e.g. ['unified-logger','file','shadow','troubleshooting']
   reason?: string;
   tags?: string[];
 }
@@ -305,6 +748,7 @@ interface RoutingMeta {
 * Gateway internal logs (`source: 'logs-gateway-internal'`) never reach unified-logger.
 * `_routing` lets you allow/block specific outputs per entry.
 * Shadow Logging honors `_routing.blockOutputs` by default (configurable).
+* Troubleshooting output can be blocked via `_routing.blockOutputs: ['troubleshooting']`.
 
 ---
 
@@ -368,34 +812,6 @@ const logger = createLogger(
 
 ---
 
-## API Reference
-
-### `createLogger(packageConfig, userConfig?) → LogsGateway`
-
-### `LogsGateway` Methods
-
-* `verbose(message, data?)`
-* `debug(message, data?)`
-* `info(message, data?)`
-* `warn(message, data?)`
-* `error(message, data?)`
-* `isLevelEnabled(level)` – threshold check (namespace DEBUG forces verbose+debug)
-* `getConfig()` – effective resolved config
-
-### Shadow Controller
-
-* `logger.shadow.enable(runId, opts?)`
-* `logger.shadow.disable(runId)`
-* `logger.shadow.isEnabled(runId)`
-* `logger.shadow.listActive()`
-* `logger.shadow.export(runId, outPath?, compress?) → Promise<string>`
-* `logger.shadow.readIndex(runId) → Promise<ShadowIndex>`
-* `logger.shadow.cleanupExpired(now?) → Promise<number>`
-
-*(Shadow writes sidecar files; primary transports unaffected.)*
-
----
-
 ## Shadow Logging (Per-Run Debug Capture)
 
 Shadow Logging allows you to capture **all logs for a specific `runId`** to a separate file in JSON or YAML format, with **raw (unsanitized) data**, regardless of the global log level. This is ideal for debugging tests, CI runs, or specific production workflows.
@@ -408,45 +824,6 @@ Shadow Logging allows you to capture **all logs for a specific `runId`** to a se
 - **Optional rolling buffer**: Capture logs from before shadow was enabled ("after-the-fact")
 - **TTL cleanup**: Automatically manage storage with time-to-live expiration
 - **No interference**: Shadow writes are async and won't affect primary logging
-
-### Quick Start
-
-```typescript
-import { createLogger } from 'logs-gateway';
-
-const logger = createLogger(
-  { packageName: 'TEST_RUNNER', envPrefix: 'TEST' },
-  {
-    shadow: {
-      enabled: true,
-      format: 'json',
-      directory: './logs/shadow',
-      ttlMs: 86400000, // 1 day
-      rollingBuffer: {
-        maxEntries: 2000,  // Keep last 2000 entries
-        maxAgeMs: 60000    // Drop entries older than 1 minute
-      }
-    }
-  }
-);
-
-// Enable shadow capture for a test run
-const runId = `test-${Date.now()}`;
-logger.shadow.enable(runId);
-
-// All logs with this runId will be captured to shadow
-logger.verbose('Detailed debug info', { runId, step: 1 });
-logger.debug('More debug', { runId, step: 2 });
-logger.info('Test started', { runId });
-logger.warn('Warning occurred', { runId });
-logger.error('Error details', { runId, error: new Error('fail') });
-
-// Export the captured logs
-await logger.shadow.export(runId, './test-artifacts/test-log.jsonl');
-
-// Disable capture when done
-logger.shadow.disable(runId);
-```
 
 ### Configuration
 
@@ -464,29 +841,6 @@ interface ShadowConfig {
     maxAgeMs?: number;               // default: 0 (disabled)
   };
 }
-```
-
-#### Environment Variables
-
-```bash
-# Enable shadow logging
-TEST_SHADOW_ENABLED=true
-
-# Output format (json or yaml)
-TEST_SHADOW_FORMAT=json
-
-# Shadow files directory
-TEST_SHADOW_DIR=./logs/shadow
-
-# Time-to-live in milliseconds
-TEST_SHADOW_TTL_MS=86400000
-
-# Respect routing blocks (file/shadow)
-TEST_SHADOW_RESPECT_ROUTING=true
-
-# Rolling buffer settings
-TEST_SHADOW_BUFFER_ENTRIES=2000
-TEST_SHADOW_BUFFER_AGE_MS=60000
 ```
 
 ### Runtime API
@@ -509,164 +863,21 @@ logger.shadow.enable('test-run-yaml', {
 
 Stop capturing logs for a runId and finalize the shadow file.
 
-```typescript
-logger.shadow.disable('test-run-123');
-```
-
 #### `logger.shadow.isEnabled(runId)`
 
 Check if shadow capture is active for a runId.
-
-```typescript
-if (logger.shadow.isEnabled('test-run-123')) {
-  console.log('Shadow capture is active');
-}
-```
 
 #### `logger.shadow.listActive()`
 
 List all currently active shadow captures.
 
-```typescript
-const active = logger.shadow.listActive();
-// Returns: [{ runId: 'test-run-123', since: '2025-10-25T10:30:00Z', format: 'json' }]
-```
-
 #### `logger.shadow.export(runId, outPath?)`
 
 Copy the shadow file to a destination path.
 
-```typescript
-// Export to current directory with default name
-const path = await logger.shadow.export('test-run-123');
-
-// Export to specific path
-await logger.shadow.export('test-run-123', './artifacts/test-log.jsonl');
-```
-
 #### `logger.shadow.cleanupExpired(now?)`
 
 Delete expired shadow files based on TTL. Returns number of deleted runs.
-
-```typescript
-// Clean up expired runs
-const deletedCount = await logger.shadow.cleanupExpired();
-console.log(`Deleted ${deletedCount} expired shadow runs`);
-
-// Or simulate cleanup at a specific time
-const futureTime = Date.now() + 86400000;
-await logger.shadow.cleanupExpired(futureTime);
-```
-
-### Storage Structure
-
-Shadow files are organized per-runId in the configured directory:
-
-```
-./logs/shadow/
-  test-run-123/
-    index.json              # Manifest with metadata
-    test-run-123.jsonl      # All logs for this run (or .yaml)
-  test-run-456/
-    index.json
-    test-run-456.jsonl
-```
-
-**index.json** contains:
-
-```json
-{
-  "runId": "test-run-123",
-  "createdAt": "2025-10-25T10:30:00.000Z",
-  "updatedAt": "2025-10-25T10:35:31.000Z",
-  "ttlMs": 86400000,
-  "format": "json",
-  "entryCount": 1234,
-  "filePath": "test-run-123.jsonl",
-  "meta": {
-    "host": "ci-runner-03",
-    "pid": 1423,
-    "package": "TEST_RUNNER"
-  }
-}
-```
-
-### Usage Patterns
-
-#### 1. CI/Test Runner Integration
-
-```typescript
-// test-setup.ts
-import { createLogger } from 'logs-gateway';
-
-export const logger = createLogger(
-  { packageName: 'CI_TESTS', envPrefix: 'CI' },
-  {
-    shadow: {
-      enabled: process.env.CI === 'true',
-      directory: './test-artifacts/shadow',
-      format: 'json'
-    }
-  }
-);
-
-// test-suite.test.ts
-import { logger } from './test-setup';
-
-describe('Payment Flow', () => {
-  const runId = `payment-test-${Date.now()}`;
-  
-  beforeAll(() => {
-    logger.shadow.enable(runId);
-  });
-  
-  afterAll(async () => {
-    await logger.shadow.export(runId, `./artifacts/${runId}.jsonl`);
-    logger.shadow.disable(runId);
-  });
-  
-  it('should process payment', () => {
-    logger.info('Starting payment', { runId, amount: 100 });
-    // ... test logic ...
-  });
-});
-```
-
-#### 2. After-the-Fact Debugging
-
-```typescript
-// Start with rolling buffer enabled
-const logger = createLogger(
-  { packageName: 'API', envPrefix: 'API' },
-  {
-    shadow: {
-      enabled: true,
-      rollingBuffer: {
-        maxEntries: 2000,
-        maxAgeMs: 60000  // Last 1 minute
-      }
-    }
-  }
-);
-
-// Application runs normally...
-logger.info('Request received', { runId: 'req-123' });
-logger.debug('Processing', { runId: 'req-123' });
-
-// Error occurs - enable shadow capture retroactively
-logger.error('Payment failed!', { runId: 'req-123' });
-logger.shadow.enable('req-123');  // Flushes last 2000 buffered logs for req-123
-```
-
-#### 3. Per-Entry Shadow Override
-
-```typescript
-// Force a specific log to a shadow file without enabling for the whole run
-logger.info('Sensitive operation', {
-  runId: 'prod-request-456',
-  _shadow: { runId: 'debug-capture' }  // Capture to debug-capture shadow
-});
-```
 
 ### Important Considerations
 
@@ -676,55 +887,75 @@ logger.info('Sensitive operation', {
 
 🚫 **Default OFF**: Shadow logging is disabled by default and must be explicitly enabled via config or environment variables.
 
-✅ **Recommended Use Cases**:
-- Debugging CI/test failures with full context
-- Capturing verbose logs for specific problematic requests in staging
-- Temporary deep-dive debugging in development
+---
 
-❌ **Not Recommended**:
-- Production systems with sensitive data (unless isolated)
-- Long-running services without TTL cleanup
-- High-throughput systems (performance impact)
+## Troubleshooting Integration
 
-### Routing and Blocking
+The troubleshooting integration uses `nx-troubleshooting` to match errors to solutions. See the [nx-troubleshooting documentation](https://www.npmjs.com/package/nx-troubleshooting) for details on creating troubleshooting narratives.
 
-Shadow respects `_routing.blockOutputs` metadata by default:
+### Key Features
 
-```typescript
-// This log won't be captured to shadow
-logger.info('Internal log', {
-  runId: 'test-123',
-  _routing: {
-    blockOutputs: ['shadow', 'file']
-  }
-});
+- **Intelligent Error Matching** – Matches errors to solutions using multiple strategies
+- **Flexible Probe System** – Built-in probes plus extensible custom probes
+- **Template Variables** – Dynamic solution messages with `{{variable}}` syntax
+- **Multiple Output Formats** – Markdown, JSON, and plain text formatting
+- **Automatic Scoping** – Errors automatically trigger scoped log collection
 
-// Override routing blocks for specific captures
-const logger = createLogger(pkg, {
-  shadow: {
-    enabled: true,
-    respectRoutingBlocks: false  // Capture everything
-  }
-});
+### Example Troubleshooting Narrative
+
+```json
+{
+  "id": "missing-connections-config",
+  "title": "Missing Connections Configuration",
+  "description": "The application config is missing the required 'connections' object...",
+  "symptoms": [
+    {
+      "probe": "config-check",
+      "params": { "field": "connections" },
+      "condition": "result.exists == false"
+    }
+  ],
+  "solution": [
+    {
+      "type": "code",
+      "message": "Add a 'connections' object to your config:",
+      "code": "{\n  \"connections\": { ... }\n}"
+    }
+  ]
+}
 ```
+
+---
+
+## Backwards Compatibility
+
+* All new behavior is **opt-in**:
+  * `scoping.enabled` and `troubleshooting.enabled` default to `false`.
+* If `nx-troubleshooting` is not installed:
+  * `troubleshooting.enabled` must remain `false` or initialization fails clearly.
+* If neither shadow nor buffer is configured:
+  * `scopeLogs` can still filter **currently available** logs if in-memory buffer is enabled; otherwise, scopes may be empty.
+* `scopeRecord` is pure and can be used independently anywhere.
 
 ---
 
 ## Environment Variables (summary)
 
-| Key                    | Description                            | Default   |       |        |        |        |
-| ---------------------- | -------------------------------------- | --------- | ----- | ------ | ------ | ------ |
-| `{P}_LOG_TO_CONSOLE`   | Enable console output                  | `true`    |       |        |        |        |
-| `{P}_LOG_TO_FILE`      | Enable file output                     | `false`   |       |        |        |        |
-| `{P}_LOG_FILE`         | Log file path                          | —         |       |        |        |        |
-| `{P}_LOG_TO_UNIFIED`   | Enable unified-logger                  | `false`   |       |        |        |        |
-| `{P}_LOG_LEVEL`        | `verbose                               | debug     | info  | warn   | error` | `info` |
-| `{P}_LOG_FORMAT`       | `text                                  | json      | yaml` | `text` |        |        |
-| `DEBUG`                | Namespace(s) enabling verbose+debug    | —         |       |        |        |        |
-| `{P}_SANITIZE_ENABLED` | Turn on sanitization                   | `false`   |       |        |        |        |
-| `{P}_TRACE_OTEL`       | Attach `traceId`/`spanId` if available | `true`    |       |        |        |        |
-| `{P}_TRAILS_*`         | Toggle trails/header adapters          | see above |       |        |        |        |
-| `{P}_SHADOW_*`         | Shadow Logging controls                | see above |       |        |        |        |
+| Key                    | Description                            | Default   |
+| ---------------------- | -------------------------------------- | --------- |
+| `{P}_LOG_TO_CONSOLE`   | Enable console output                  | `true`    |
+| `{P}_LOG_TO_FILE`      | Enable file output                     | `false`   |
+| `{P}_LOG_FILE`         | Log file path                          | —         |
+| `{P}_LOG_TO_UNIFIED`   | Enable unified-logger                  | `false`   |
+| `{P}_LOG_LEVEL`        | `verbose\|debug\|info\|warn\|error` | `info` |
+| `{P}_LOG_FORMAT`       | `text\|json\|yaml` | `text` |
+| `DEBUG`                | Namespace(s) enabling verbose+debug    | —         |
+| `{P}_SANITIZE_ENABLED` | Turn on sanitization                   | `false`   |
+| `{P}_TRACE_OTEL`       | Attach `traceId`/`spanId` if available | `true`    |
+| `{P}_TRAILS_*`         | Toggle trails/header adapters          | see above |
+| `{P}_SHADOW_*`         | Shadow Logging controls                | see above |
+| `{P}_SCOPING_*`        | Scoping controls                       | see above |
+| `{P}_TROUBLESHOOTING_*` | Troubleshooting controls              | see above |
 
 ---
 
