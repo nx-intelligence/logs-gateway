@@ -77,6 +77,12 @@
     "typescript": "^5.0.0",
     "vitest": "^4.0.3"
   },
+  "peerDependencies": {
+    "nx-troubleshooting": "^2.0.1"
+  },
+  "optionalDependencies": {
+    "nx-troubleshooting": "^2.0.1"
+  },
   "engines": {
     "node": ">=16.0.0"
   },
