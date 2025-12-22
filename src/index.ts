@@ -29,6 +29,7 @@ export { LogsGateway } from './logger';
 import { LogsGateway } from './logger';
 import { UnifiedLoggerOutput } from './outputs/unified-logger-output';
 import { formatLogEntryAsYaml } from './formatters/yaml-formatter';
+import { detectAppInfo } from './app-info';
 import type { LoggerPackageConfig, LoggingConfig, LogLevel, LogMeta, TransportsConfig, TracingConfig, TrailsConfig } from './types';
 
 /**
@@ -82,6 +83,9 @@ export function createLogger(
   };
 
   const sinks: any = {};
+  
+  // Automatically detect consuming application's package name and version
+  const appInfo = detectAppInfo();
 
   // Console sink (existing behavior)
   if (resolved.logToConsole) {
@@ -93,7 +97,9 @@ export function createLogger(
           package: packageConfig.packageName,
           level: level.toUpperCase(),
           message: msg,
-          data: meta ? { ...meta } : undefined
+          data: meta ? { ...meta } : undefined,
+          ...(appInfo.name && { appName: appInfo.name }),
+          ...(appInfo.version && { appVersion: appInfo.version })
         };
         // Avoid nesting _routing/noise into "data" twice
         if (meta?._routing) {
@@ -109,6 +115,8 @@ export function createLogger(
           message: msg,
           source: meta?.source ?? resolved.defaultSource ?? 'application',
           ...(meta && { data: meta }),
+          ...(appInfo.name && { appName: appInfo.name }),
+          ...(appInfo.version && { appVersion: appInfo.version }),
           // Include other metadata fields if present
           ...(meta?.correlationId && { correlationId: meta.correlationId }),
           ...(meta?.tags && { tags: meta.tags }),
@@ -140,6 +148,8 @@ export function createLogger(
             message: msg,
             source: meta?.source ?? resolved.defaultSource ?? 'application',
             ...(meta && { data: meta }),
+            ...(appInfo.name && { appName: appInfo.name }),
+            ...(appInfo.version && { appVersion: appInfo.version }),
             // Include other metadata fields if present
             ...(meta?.correlationId && { correlationId: meta.correlationId }),
             ...(meta?.tags && { tags: meta.tags }),

@@ -21,6 +21,7 @@ import { UnifiedLoggerOutput } from './outputs/unified-logger-output';
 import { LogSanitizer } from './sanitizer';
 import { formatLogEntryAsYaml } from './formatters/yaml-formatter';
 import { ShadowSink } from './outputs/shadow-sink';
+import { detectAppInfo } from './app-info';
 
 /**
  * Main LogsGateway class for handling all logging operations
@@ -31,6 +32,7 @@ export class LogsGateway {
   private sanitizer: LogSanitizer;
   private shadowSink?: ShadowSink;
   public readonly shadow: ShadowController;
+  private appInfo: { name?: string; version?: string };
   private levelPriority: Record<LogLevel, number> = {
     verbose: 0,
     debug: 1,
@@ -55,6 +57,8 @@ export class LogsGateway {
   ) {
     this.packageConfig = packageConfig;
     this.sinks = sinks || {};
+    // Automatically detect consuming application's package name and version
+    this.appInfo = detectAppInfo();
    
     // Check DEBUG environment variable
     const envPrefix = packageConfig.envPrefix || packageConfig.packageName;
@@ -268,7 +272,9 @@ export class LogsGateway {
       package: this.packageConfig.packageName,
       level: level.toUpperCase(),
       message,
-      ...(meta !== undefined && { data: meta })
+      ...(meta !== undefined && { data: meta }),
+      ...(this.appInfo.name && { appName: this.appInfo.name }),
+      ...(this.appInfo.version && { appVersion: this.appInfo.version })
     };
 
     if (this.config.logFormat === 'json') {
@@ -282,6 +288,8 @@ export class LogsGateway {
         message: logEntry.message,
         source: meta?.source ?? this.config.defaultSource ?? 'application',
         ...(logEntry.data && { data: logEntry.data }),
+        ...(this.appInfo.name && { appName: this.appInfo.name }),
+        ...(this.appInfo.version && { appVersion: this.appInfo.version }),
         // Include other metadata fields if present
         ...(meta?.correlationId && { correlationId: meta.correlationId }),
         ...(meta?.tags && { tags: meta.tags }),
@@ -341,6 +349,8 @@ export class LogsGateway {
       message,
       source: meta?.source ?? this.config.defaultSource ?? 'application',
       ...(meta && { data: meta }),
+      ...(this.appInfo.name && { appName: this.appInfo.name }),
+      ...(this.appInfo.version && { appVersion: this.appInfo.version }),
       // Extract known fields from meta
       ...(meta?.correlationId && { correlationId: meta.correlationId }),
       ...(meta?.jobId && { jobId: meta.jobId }),

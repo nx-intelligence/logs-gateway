@@ -129,6 +129,10 @@ export interface LogEntry {
   level: string;
   message: string;
   data?: any;
+  /** Consuming application name (auto-detected from package.json) */
+  appName?: string;
+  /** Consuming application version (auto-detected from package.json) */
+  appVersion?: string;
 }
 
 /**
@@ -344,6 +348,10 @@ export interface LogEnvelope {
   source: string;
   /** Sanitized payload data */
   data?: any;
+  /** Consuming application name (auto-detected from package.json) */
+  appName?: string;
+  /** Consuming application version (auto-detected from package.json) */
+  appVersion?: string;
 
   // Job/correlation fields
   /** Correlation identifier */

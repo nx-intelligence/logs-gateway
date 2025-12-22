@@ -84,6 +84,58 @@ logger.error('Error occurred', { error: new Error('boom') });
 
 ---
 
+## Automatic Application Identification
+
+**logs-gateway** automatically detects and includes your application's package name and version in every log entry. This is done by reading the consuming project's `package.json` file (the project using logs-gateway, not logs-gateway itself).
+
+### How It Works
+
+When you create a logger instance, logs-gateway automatically:
+1. Searches up the directory tree from `process.cwd()` to find the nearest `package.json`
+2. Extracts the `name` and `version` fields from that file
+3. Includes them in all log entries as `appName` and `appVersion`
+
+This happens **automatically** - no configuration needed! The detection is cached after the first call for performance.
+
+### Example
+
+If your project's `package.json` contains:
+```json
+{
+  "name": "my-awesome-app",
+  "version": "2.1.0"
+}
+```
+
+Then all log entries will automatically include:
+```json
+{
+  "timestamp": "2025-01-15T10:30:45.123Z",
+  "package": "MY_APP",
+  "level": "INFO",
+  "message": "Application initialized",
+  "appName": "my-awesome-app",
+  "appVersion": "2.1.0",
+  "data": { ... }
+}
+```
+
+### Benefits
+
+- **Traceability**: Know exactly which application version generated each log entry
+- **Debugging**: Filter logs by application version in centralized logging systems
+- **Deployment Tracking**: Identify which deployments are running in production
+- **Zero Configuration**: Works automatically without any API changes
+
+### Important Notes
+
+- The detection searches from `process.cwd()` (the working directory where your app runs)
+- It stops at the first `package.json` that is not in `node_modules`
+- If no `package.json` is found, `appName` and `appVersion` are simply omitted (no error)
+- The result is cached after first detection for performance
+
+---
+
 ## Overview: Scoping, Story Output & Troubleshooting
 
 This extension adds three major capabilities:
@@ -281,6 +333,10 @@ export interface LogEntry {
   message: string;
   source?: string;             // e.g. 'application', 'auth-service'
   data?: Record<string, any>;  // user metadata, error, ids, etc.
+  
+  // Automatic application identification (from consuming project's package.json)
+  appName?: string;            // Auto-detected from package.json "name" field
+  appVersion?: string;         // Auto-detected from package.json "version" field
   
   // Correlation / trails / tracing
   runId?: string;
@@ -782,6 +838,8 @@ package: MY_APP
 level: INFO
 message: Application initialized
 source: application
+appName: my-awesome-app
+appVersion: "2.1.0"
 data:
   version: "1.0.0"
 ```

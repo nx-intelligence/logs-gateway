@@ -8,6 +8,7 @@
  */
 
 import { initLogger, logger } from '@x-developer/unified-logger';
+import { detectAppInfo } from '../app-info';
 import type { UnifiedLoggerConfig, LogMeta, LogLevel } from '../types';
 
 /**
@@ -101,9 +102,12 @@ export class UnifiedLoggerOutput {
 
     try {
       const mappedLevel = this.mapLevel(level);
+      const appInfo = detectAppInfo();
       const payload: Record<string, any> = {
         ...meta,
-        source: meta?.source ?? 'application'
+        source: meta?.source ?? 'application',
+        ...(appInfo.name && { appName: appInfo.name }),
+        ...(appInfo.version && { appVersion: appInfo.version })
       };
       
       if (meta?.correlationId) {
