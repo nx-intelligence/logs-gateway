@@ -43,6 +43,12 @@ import type { LoggerPackageConfig, LoggingConfig, LogLevel, LogMeta, TransportsC
  * ```typescript
  * import { createLogger } from 'logs-gateway';
  *
+ * // Zero-config mode (ERC 2.0): Auto-discovers from environment variables
+ * const logger = createLogger(
+ *   { packageName: 'MY_APP', envPrefix: 'MY_APP', debugNamespace: 'my-app' }
+ * );
+ *
+ * // Advanced mode: Explicit configuration
  * const logger = createLogger(
  *   { packageName: 'MY_APP', envPrefix: 'MY_APP', debugNamespace: 'my-app' },
  *   { logToFile: true, logFilePath: '/var/log/myapp.log' }

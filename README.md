@@ -2,6 +2,70 @@
 
 A standardized logging gateway for Node.js applications. Flexible multi-transport logging with **console**, **file**, and **unified-logger** outputs; **ENV-first** configuration; **PII/credentials sanitization**; **dual correlation trails** (operation & thread); **OpenTelemetry** context; **YAML/JSON/text** formats; **per-run "Shadow Logging"** for test/debug capture; **scoping** with text filters; **story output** powered by `scopeRecord`; and **troubleshooting integration** with `nx-troubleshooting`.
 
+## 🚀 Env-Ready Component (ERC 2.0)
+
+This component supports **zero-config initialization** via environment variables and is compliant with the [Env-Ready Component Standard (ERC 2.0)](https://github.com/xeonox/erc-standard).
+
+### ERC 2.0 Compliance
+
+- ✅ **Auto-Discovery**: Zero-config initialization from environment variables
+- ✅ **Complete Documentation**: All environment variables documented (including dependencies)
+- ✅ **Type Safety**: Automatic type coercion and validation
+- ✅ **Manifest**: Auto-generated `erc-manifest.json` with all requirements
+- ✅ **Example File**: Auto-generated `.env.example` with all transitive requirements
+- ✅ **Dependency Tracking**: Documents both ERC and non-ERC dependencies
+
+### Quick Start (Zero-Config Mode)
+
+```bash
+# 1. Install the package
+npm install logs-gateway
+
+# 2. Set environment variables (replace MY_APP with your prefix)
+export MY_APP_LOG_TO_CONSOLE=true
+export MY_APP_LOG_LEVEL=info
+export MY_APP_LOG_FORMAT=json
+
+# 3. Use with zero config!
+import { createLogger } from 'logs-gateway';
+const logger = createLogger(
+  { packageName: 'MY_APP', envPrefix: 'MY_APP' }
+); // Auto-discovers from process.env
+```
+
+### Advanced Mode (Programmatic Configuration)
+
+```typescript
+import { createLogger } from 'logs-gateway';
+
+const logger = createLogger(
+  { packageName: 'MY_APP', envPrefix: 'MY_APP' },
+  {
+    logToFile: true,
+    logFilePath: '/var/log/myapp.log',
+    logLevel: 'info'
+  }
+);
+```
+
+### Environment Variables
+
+**Note**: This component uses **dynamic environment variable prefixes** based on `packageConfig.envPrefix`. Replace `{PREFIX}` with your actual prefix (e.g., `MY_APP`, `API_SERVICE`).
+
+See `.env.example` for the complete list of required and optional variables with descriptions. Generate it by running:
+
+```bash
+npm run generate-erc
+```
+
+### Dependencies
+
+- ✅ **nx-config2** (ERC 2.0) - Configuration engine
+- ℹ️ **@x-developer/unified-logger** (non-ERC) - Requirements manually documented
+- ℹ️ **nx-troubleshooting** (non-ERC, optional) - Requirements manually documented
+
+---
+
 ## Features
 
 * ✅ Console output (default)
@@ -260,62 +324,75 @@ const logger = createLogger(
 
 ### Via Environment Variables
 
+**Note**: Environment variable names use a **dynamic prefix** based on `packageConfig.envPrefix`. Replace `{PREFIX}` in the examples below with your actual prefix (e.g., `MY_APP`, `API_SERVICE`).
+
 ```bash
 # Console & file
-MY_APP_LOG_TO_CONSOLE=true|false
-MY_APP_LOG_TO_FILE=true|false
-MY_APP_LOG_FILE=/path/to/log
+{PREFIX}_LOG_TO_CONSOLE=true|false
+{PREFIX}_LOG_TO_FILE=true|false
+{PREFIX}_LOG_FILE=/path/to/log
 
 # Unified-logger
-MY_APP_LOG_TO_UNIFIED=true|false
+{PREFIX}_LOG_TO_UNIFIED=true|false
 
 # Level & format
-MY_APP_LOG_LEVEL=verbose|debug|info|warn|error
-MY_APP_LOG_FORMAT=text|json|yaml
+{PREFIX}_LOG_LEVEL=verbose|debug|info|warn|error
+{PREFIX}_LOG_FORMAT=text|json|yaml
 
 # Debug namespace → enables verbose+debug for that namespace
 DEBUG=my-pkg,other-*
 
 # Sanitization (subset shown)
-MY_APP_SANITIZE_ENABLED=true|false
-MY_APP_SANITIZE_KEYS_DENYLIST=authorization,token,secret,api_key,password
+{PREFIX}_SANITIZE_ENABLED=true|false
+{PREFIX}_SANITIZE_KEYS_DENYLIST=authorization,token,secret,api_key,password
 
 # Trails/tracing
-MY_APP_TRACE_OTEL=true|false
-MY_APP_TRAILS_DEPTH=true|false
-MY_APP_TRAILS_THREAD=true|false
-MY_APP_TRAILS_INJECT=true|false
-MY_APP_TRAILS_EXTRACT=true|false
+{PREFIX}_TRACE_OTEL=true|false
+{PREFIX}_TRAILS_DEPTH=true|false
+{PREFIX}_TRAILS_THREAD=true|false
+{PREFIX}_TRAILS_INJECT=true|false
+{PREFIX}_TRAILS_EXTRACT=true|false
 
 # Shadow Logging
-MY_APP_SHADOW_ENABLED=true|false
-MY_APP_SHADOW_FORMAT=json|yaml
-MY_APP_SHADOW_DIR=/var/log/myapp/shadow
-MY_APP_SHADOW_TTL_MS=86400000
-MY_APP_SHADOW_FORCE_VERBOSE=true|false
-MY_APP_SHADOW_RESPECT_ROUTING=true|false
-MY_APP_SHADOW_INCLUDE_RAW=false
-MY_APP_SHADOW_BUFFER_ENTRIES=0
-MY_APP_SHADOW_BUFFER_AGE_MS=0
+{PREFIX}_SHADOW_ENABLED=true|false
+{PREFIX}_SHADOW_FORMAT=json|yaml
+{PREFIX}_SHADOW_DIR=/var/log/myapp/shadow
+{PREFIX}_SHADOW_TTL_MS=86400000
+{PREFIX}_SHADOW_FORCE_VERBOSE=true|false
+{PREFIX}_SHADOW_RESPECT_ROUTING=true|false
+{PREFIX}_SHADOW_INCLUDE_RAW=false
+{PREFIX}_SHADOW_BUFFER_ENTRIES=0
+{PREFIX}_SHADOW_BUFFER_AGE_MS=0
 
 # Scoping
-MY_APP_SCOPING_ENABLED=true|false
-MY_APP_SCOPING_ERROR_ENABLED=true|false
-MY_APP_SCOPING_ERROR_WINDOW_MS_BEFORE=30000
-MY_APP_SCOPING_ERROR_WINDOW_MS_AFTER=30000
-MY_APP_SCOPING_BUFFER_ENTRIES=5000
-MY_APP_SCOPING_BUFFER_AGE_MS=300000
-MY_APP_SCOPING_BUFFER_PREFER_SHADOW=true|false
+{PREFIX}_SCOPING_ENABLED=true|false
+{PREFIX}_SCOPING_ERROR_ENABLED=true|false
+{PREFIX}_SCOPING_ERROR_WINDOW_MS_BEFORE=30000
+{PREFIX}_SCOPING_ERROR_WINDOW_MS_AFTER=30000
+{PREFIX}_SCOPING_BUFFER_ENTRIES=5000
+{PREFIX}_SCOPING_BUFFER_AGE_MS=300000
+{PREFIX}_SCOPING_BUFFER_PREFER_SHADOW=true|false
 
 # Troubleshooting
-MY_APP_TROUBLESHOOTING_ENABLED=true|false
-MY_APP_TROUBLESHOOTING_NARRATIVES_PATH=./metadata/troubleshooting.json
-MY_APP_TROUBLESHOOTING_OUTPUT_FORMATS=markdown,json
-MY_APP_TROUBLESHOOTING_OUTPUT_EMIT_AS_LOG_ENTRY=true|false
+{PREFIX}_TROUBLESHOOTING_ENABLED=true|false
+{PREFIX}_TROUBLESHOOTING_NARRATIVES_PATH=./metadata/troubleshooting.json
+{PREFIX}_TROUBLESHOOTING_OUTPUT_FORMATS=markdown,json
+{PREFIX}_TROUBLESHOOTING_OUTPUT_EMIT_AS_LOG_ENTRY=true|false
+
+# Unified-logger dependencies (non-ERC, manually documented)
+# Required when unified-logger papertrail transport is enabled:
+PAPERTRAIL_HOST=logs.papertrailapp.com
+PAPERTRAIL_PORT=12345
+
+# Required when unified-logger udpRelay transport is enabled:
+UDP_RELAY_HOST=127.0.0.1
+UDP_RELAY_PORT=514
 ```
 
 > **Default min level:** `info`.
 > **`DEBUG=`**: enables **both** `verbose` and `debug` for matching namespaces.
+> 
+> **ERC 2.0 Note**: Generate a complete `.env.example` file with all variables by running `npm run generate-erc`.
 
 ---
 
