@@ -29,8 +29,9 @@ export { LogsGateway } from './logger';
 import { LogsGateway } from './logger';
 import { UnifiedLoggerOutput } from './outputs/unified-logger-output';
 import { formatLogEntryAsYaml } from './formatters/yaml-formatter';
+import { outputLogAsTable } from './formatters/table-formatter';
 import { detectAppInfo } from './app-info';
-import type { LoggerPackageConfig, LoggingConfig, LogLevel, LogMeta, TransportsConfig, TracingConfig, TrailsConfig } from './types';
+import type { LoggerPackageConfig, LoggingConfig, LogLevel, LogMeta, LogEnvelope, TransportsConfig, TracingConfig, TrailsConfig } from './types';
 
 /**
  * Create a package-specific logger instance
@@ -75,7 +76,7 @@ export function createLogger(
     logToFile: userConfig?.logToFile ?? false,
     logFilePath: userConfig?.logFilePath ?? '',
     logLevel: userConfig?.logLevel ?? 'info',
-    logFormat: userConfig?.logFormat ?? 'text',
+    logFormat: userConfig?.logFormat ?? 'table', // Default to table format
     enableUnifiedLogger: userConfig?.enableUnifiedLogger ?? false,
     unifiedLogger: userConfig?.unifiedLogger ?? {},
     defaultSource: userConfig?.defaultSource ?? 'application',
@@ -94,27 +95,31 @@ export function createLogger(
   const appInfo = detectAppInfo();
 
   // Console sink (existing behavior)
+  // Priority order: table (default) → yaml → json → text
   if (resolved.logToConsole) {
     sinks.console = (level: LogLevel, msg: string, meta?: LogMeta) => {
-      if (resolved.logFormat === 'json') {
-        // Keep v1 JSON structure stable; add source/correlation when present
-        const payload: any = {
+      if (resolved.logFormat === 'table') {
+        // Table format (default): create envelope and output as table
+        const envelope: LogEnvelope = {
           timestamp: new Date().toISOString(),
           package: packageConfig.packageName,
           level: level.toUpperCase(),
           message: msg,
-          data: meta ? { ...meta } : undefined,
+          source: meta?.source ?? resolved.defaultSource ?? 'application',
+          ...(meta && { data: meta }),
           ...(appInfo.name && { appName: appInfo.name }),
-          ...(appInfo.version && { appVersion: appInfo.version })
+          ...(appInfo.version && { appVersion: appInfo.version }),
+          // Include other metadata fields if present
+          ...(meta?.correlationId && { correlationId: meta.correlationId }),
+          ...(meta?.jobId && { jobId: meta.jobId }),
+          ...(meta?.runId && { runId: meta.runId }),
+          ...(meta?.sessionId && { sessionId: meta.sessionId }),
+          ...(meta?.tags && { tags: meta.tags })
         };
-        // Avoid nesting _routing/noise into "data" twice
-        if (meta?._routing) {
-          delete payload.data._routing;
-        }
-        console.log(JSON.stringify(payload));
+        outputLogAsTable(envelope);
       } else if (resolved.logFormat === 'yaml') {
         // YAML format: create envelope and format as YAML
-        const envelope = {
+        const envelope: LogEnvelope = {
           timestamp: new Date().toISOString(),
           package: packageConfig.packageName,
           level: level.toUpperCase(),
@@ -129,7 +134,24 @@ export function createLogger(
           ...(meta?._routing && { _routing: meta._routing })
         };
         console.log(formatLogEntryAsYaml(envelope));
+      } else if (resolved.logFormat === 'json') {
+        // JSON format: keep v1 JSON structure stable; add source/correlation when present
+        const payload: any = {
+          timestamp: new Date().toISOString(),
+          package: packageConfig.packageName,
+          level: level.toUpperCase(),
+          message: msg,
+          data: meta ? { ...meta } : undefined,
+          ...(appInfo.name && { appName: appInfo.name }),
+          ...(appInfo.version && { appVersion: appInfo.version })
+        };
+        // Avoid nesting _routing/noise into "data" twice
+        if (meta?._routing) {
+          delete payload.data._routing;
+        }
+        console.log(JSON.stringify(payload));
       } else {
+        // Text format: fallback
         const ts = new Date().toISOString();
         const src = meta?.source ? `[${meta.source}] ` : '';
         const tail = meta ? ' ' + JSON.stringify(meta) : '';
@@ -140,14 +162,32 @@ export function createLogger(
   }
 
   // File sink (existing behavior preserved)
+  // Table format is console-only, so fall back to text for file output
+  const fileFormat = resolved.logFormat === 'table' ? 'text' : resolved.logFormat;
+  
   if (resolved.logToFile && resolved.logFilePath) {
     sinks.file = (level: LogLevel, msg: string, meta?: LogMeta) => {
       try {
         let formatted: string;
         
-        if (resolved.logFormat === 'yaml') {
+        if (fileFormat === 'json') {
+          // JSON format for file
+          const payload: any = {
+            timestamp: new Date().toISOString(),
+            package: packageConfig.packageName,
+            level: level.toUpperCase(),
+            message: msg,
+            data: meta ? { ...meta } : undefined,
+            ...(appInfo.name && { appName: appInfo.name }),
+            ...(appInfo.version && { appVersion: appInfo.version })
+          };
+          if (meta?._routing) {
+            delete payload.data._routing;
+          }
+          formatted = JSON.stringify(payload);
+        } else if (fileFormat === 'yaml') {
           // YAML format: create envelope and format as YAML
-          const envelope = {
+          const envelope: LogEnvelope = {
             timestamp: new Date().toISOString(),
             package: packageConfig.packageName,
             level: level.toUpperCase(),
@@ -163,7 +203,7 @@ export function createLogger(
           };
           formatted = formatLogEntryAsYaml(envelope);
         } else {
-          // Text or JSON format (existing behavior)
+          // Text format (default fallback, including when table is specified)
           const ts = new Date().toISOString();
           const src = meta?.source ? `[${meta.source}] ` : '';
           const tail = meta ? ' ' + JSON.stringify(meta) : '';

@@ -20,6 +20,7 @@ import {
 import { UnifiedLoggerOutput } from './outputs/unified-logger-output';
 import { LogSanitizer } from './sanitizer';
 import { formatLogEntryAsYaml } from './formatters/yaml-formatter';
+import { outputLogAsTable } from './formatters/table-formatter';
 import { ShadowSink } from './outputs/shadow-sink';
 import { detectAppInfo } from './app-info';
 
@@ -84,7 +85,7 @@ export class LogsGateway {
      
       logFormat: userConfig?.logFormat ??
                  (process.env[`${envPrefix}_LOG_FORMAT`] as LogFormat) ??
-                 'text',
+                 'table',
      
       enableUnifiedLogger: userConfig?.enableUnifiedLogger ??
                           (process.env[`${envPrefix}_LOG_TO_UNIFIED`] === 'true'),
@@ -296,6 +297,14 @@ export class LogsGateway {
         ...(meta?._routing && { _routing: meta._routing })
       };
       return formatLogEntryAsYaml(envelope);
+    } else if (this.config.logFormat === 'table') {
+      // Table format is handled directly in writeToConsole, but provide a fallback string
+      // This should not be called for console output, but may be used for file output
+      let formatted = `[${timestamp}] [${this.packageConfig.packageName}] [${level.toUpperCase()}] ${message}`;
+      if (meta !== undefined) {
+        formatted += ` ${typeof meta === 'object' ? JSON.stringify(meta) : meta}`;
+      }
+      return formatted;
     } else {
       // Text format: [timestamp] [PACKAGE] [LEVEL] message
       let formatted = `[${timestamp}] [${this.packageConfig.packageName}] [${level.toUpperCase()}] ${message}`;
@@ -309,8 +318,30 @@ export class LogsGateway {
   /**
    * Write formatted message to console
    */
-  private writeToConsole(level: LogLevel, formattedMessage: string): void {
+  private writeToConsole(level: LogLevel, formattedMessage: string, meta?: LogMeta): void {
     if (!this.config.logToConsole) return;
+
+    // Handle table format specially
+    if (this.config.logFormat === 'table') {
+      const timestamp = new Date().toISOString();
+      const envelope: LogEnvelope = {
+        timestamp,
+        package: this.packageConfig.packageName,
+        level: level.toUpperCase(),
+        message: formattedMessage,
+        source: meta?.source ?? this.config.defaultSource ?? 'application',
+        ...(meta !== undefined && { data: meta }),
+        ...(this.appInfo.name && { appName: this.appInfo.name }),
+        ...(this.appInfo.version && { appVersion: this.appInfo.version }),
+        ...(meta?.correlationId && { correlationId: meta.correlationId }),
+        ...(meta?.jobId && { jobId: meta.jobId }),
+        ...(meta?.runId && { runId: meta.runId }),
+        ...(meta?.sessionId && { sessionId: meta.sessionId }),
+        ...(meta?.tags && { tags: meta.tags })
+      };
+      outputLogAsTable(envelope);
+      return;
+    }
 
     if (level === 'error') {
       console.error(formattedMessage);
@@ -410,7 +441,7 @@ export class LogsGateway {
       } else {
         // Fallback to default console behavior
         const formattedMessage = this.formatLogEntry(level, sanitizedMessage, enriched);
-        this.writeToConsole(level, formattedMessage);
+        this.writeToConsole(level, formattedMessage, enriched);
       }
     }
 

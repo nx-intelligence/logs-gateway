@@ -1,6 +1,6 @@
 {
   "name": "logs-gateway",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "description": "Standardized logging gateway for Node.js with PII sanitization, correlation trails, Shadow Logging for test/debug capture, scoping with text filters, story output, troubleshooting integration, and multi-format output (JSON/YAML/text)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

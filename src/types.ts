@@ -12,7 +12,7 @@ export type LogLevel = 'verbose' | 'debug' | 'info' | 'warn' | 'error';
 /**
  * Output format options for log entries
  */
-export type LogFormat = 'text' | 'json' | 'yaml';
+export type LogFormat = 'text' | 'json' | 'yaml' | 'table';
 
 /**
  * Configuration for PII/credentials sanitization

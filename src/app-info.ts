@@ -31,17 +31,45 @@ export function detectAppInfo(): AppInfo {
   }
 
   try {
-    // Start from the caller's directory (where logs-gateway is being used)
-    // We need to go up from where the module is being called, not from logs-gateway's own directory
-    // __dirname in this file will be logs-gateway's dist directory
-    // We need to find the consuming project's package.json
+    // Determine logs-gateway's own package.json location
+    // __dirname in compiled code will be dist/app-info.js, so we go up to find logs-gateway root
+    let logsGatewayPackageJsonPath: string | null = null;
+    let logsGatewayRootDir: string | null = null;
+    
+    // Search up from __dirname to find logs-gateway's own package.json
+    const rootPath = path.parse(__dirname).root;
+    let searchDir = __dirname;
+    while (searchDir !== rootPath) {
+      const packageJsonPath = path.join(searchDir, 'package.json');
+      if (fs.existsSync(packageJsonPath) && !searchDir.includes('node_modules')) {
+        try {
+          const packageJsonContent = fs.readFileSync(packageJsonPath, 'utf8');
+          const packageJson = JSON.parse(packageJsonContent);
+          // Check if this is logs-gateway's own package.json
+          if (packageJson.name === 'logs-gateway') {
+            logsGatewayPackageJsonPath = path.resolve(packageJsonPath);
+            logsGatewayRootDir = path.resolve(searchDir);
+            break;
+          }
+        } catch (parseError) {
+          // Invalid JSON, continue searching
+        }
+      }
+      const parentDir = path.dirname(searchDir);
+      if (parentDir === searchDir) {
+        break;
+      }
+      searchDir = parentDir;
+    }
     
     // Strategy: Start from process.cwd() (the working directory where the app is running)
     // and search up until we find a package.json that's not in node_modules
+    // If we find logs-gateway's own package.json, check if we're running from within logs-gateway
+    // (i.e., logs-gateway IS the app). If so, use it. Otherwise, skip it and continue searching.
     let currentDir = process.cwd();
-    const rootPath = path.parse(currentDir).root; // Get root to avoid infinite loop
+    const cwdRootPath = path.parse(currentDir).root;
     
-    while (currentDir !== rootPath) {
+    while (currentDir !== cwdRootPath) {
       const packageJsonPath = path.join(currentDir, 'package.json');
       
       // Check if package.json exists and is not in node_modules
@@ -49,8 +77,43 @@ export function detectAppInfo(): AppInfo {
         try {
           const packageJsonContent = fs.readFileSync(packageJsonPath, 'utf8');
           const packageJson = JSON.parse(packageJsonContent);
+          const resolvedPackageJsonPath = path.resolve(packageJsonPath);
           
-          // Found a valid package.json - extract name and version
+          // If this is logs-gateway's own package.json
+          if (packageJson.name === 'logs-gateway') {
+            // Check if we're running from within logs-gateway's directory
+            // (i.e., logs-gateway IS the app, not a dependency)
+            // We check if the current working directory is within logs-gateway's root
+            const resolvedCwd = path.resolve(process.cwd());
+            const isWithinLogsGateway = logsGatewayRootDir && (
+              resolvedCwd === logsGatewayRootDir ||
+              resolvedCwd.startsWith(logsGatewayRootDir + path.sep)
+            );
+            if (isWithinLogsGateway && 
+                resolvedPackageJsonPath === logsGatewayPackageJsonPath) {
+              // We're running from logs-gateway itself, use its package.json
+              const appInfo: AppInfo = {};
+              if (packageJson.name) {
+                appInfo.name = packageJson.name;
+              }
+              if (packageJson.version) {
+                appInfo.version = packageJson.version;
+              }
+              cachedAppInfo = appInfo;
+              return appInfo;
+            } else {
+              // This is logs-gateway's package.json but we're using it as a dependency
+              // Skip it and continue searching for the consuming app's package.json
+              const parentDir = path.dirname(currentDir);
+              if (parentDir === currentDir) {
+                break;
+              }
+              currentDir = parentDir;
+              continue;
+            }
+          }
+          
+          // Found a valid package.json that's not logs-gateway - extract name and version
           const appInfo: AppInfo = {};
           if (packageJson.name) {
             appInfo.name = packageJson.name;
