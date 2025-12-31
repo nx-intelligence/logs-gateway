@@ -21,7 +21,10 @@ const configMap: any = {
   logToFile: `ENV.${buildEnvVar('LOG_TO_FILE')}||false`,
   logFilePath: `ENV.${buildEnvVar('LOG_FILE')}||''`,
   logLevel: `ENV.${buildEnvVar('LOG_LEVEL')}||info`,
-  logFormat: `ENV.${buildEnvVar('LOG_FORMAT')}||text`,
+  logFormat: `ENV.${buildEnvVar('LOG_FORMAT')}||table`,
+  showFullTimestamp: `ENV.${buildEnvVar('SHOW_FULL_TIMESTAMP')}||false`,
+  consolePackagesShow: `ENV.${buildEnvVar('CONSOLE_PACKAGES_SHOW')}||''`,
+  consolePackagesHide: `ENV.${buildEnvVar('CONSOLE_PACKAGES_HIDE')}||''`,
   enableUnifiedLogger: `ENV.${buildEnvVar('LOG_TO_UNIFIED')}||false`,
   defaultSource: `ENV.${buildEnvVar('LOG_DEFAULT_SOURCE')}||application`,
   sanitization: {
@@ -92,7 +95,10 @@ const result = initConfig(configMap, {
     [`${buildEnvVar('LOG_TO_FILE')}`]: 'Enable file output (default: false)',
     [`${buildEnvVar('LOG_FILE')}`]: 'File path for logs (required if LOG_TO_FILE is true)',
     [`${buildEnvVar('LOG_LEVEL')}`]: 'Minimum log level: verbose|debug|info|warn|error (default: info)',
-    [`${buildEnvVar('LOG_FORMAT')}`]: 'Output format: text|json|yaml (default: text)',
+    [`${buildEnvVar('LOG_FORMAT')}`]: 'Output format: text|json|yaml|table (default: table)',
+    [`${buildEnvVar('SHOW_FULL_TIMESTAMP')}`]: 'Show full ISO timestamp in console logs (default: false)',
+    [`${buildEnvVar('CONSOLE_PACKAGES_SHOW')}`]: 'Comma-separated list of package names to show in console (console only, default: show all)',
+    [`${buildEnvVar('CONSOLE_PACKAGES_HIDE')}`]: 'Comma-separated list of package names to hide in console (console only, default: show all)',
     [`${buildEnvVar('LOG_TO_UNIFIED')}`]: 'Enable unified-logger output (default: false)',
     [`${buildEnvVar('LOG_DEFAULT_SOURCE')}`]: 'Default source identifier for log entries (default: application)',
     // Sanitization

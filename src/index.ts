@@ -28,6 +28,7 @@ export { LogsGateway } from './logger';
 // Import LogsGateway for the factory function
 import { LogsGateway } from './logger';
 import { UnifiedLoggerOutput } from './outputs/unified-logger-output';
+import type { DebugScopingConfig } from './types';
 import { formatLogEntryAsYaml } from './formatters/yaml-formatter';
 import { outputLogAsTable } from './formatters/table-formatter';
 import { detectAppInfo } from './app-info';
@@ -63,7 +64,7 @@ export function createLogger(
   userConfig?: LoggingConfig
 ): LogsGateway {
   // Resolve configuration with defaults
-  const resolved: Required<Omit<LoggingConfig, 'customLogger' | 'unifiedLogger' | 'transports' | 'tracing' | 'trails' | 'schemaCheck' | 'shadow'>> & {
+  const resolved: Required<Omit<LoggingConfig, 'customLogger' | 'unifiedLogger' | 'transports' | 'tracing' | 'trails' | 'schemaCheck' | 'shadow' | 'consolePackagesShow' | 'consolePackagesHide' | 'debugScoping'>> & {
     customLogger?: any;
     unifiedLogger?: any;
     transports?: TransportsConfig | undefined;
@@ -71,12 +72,18 @@ export function createLogger(
     trails?: TrailsConfig | undefined;
     schemaCheck?: { enabled?: boolean };
     shadow?: any;
+    consolePackagesShow?: string[];
+    consolePackagesHide?: string[];
+    debugScoping?: DebugScopingConfig | undefined;
   } = {
     logToConsole: userConfig?.logToConsole ?? true,
     logToFile: userConfig?.logToFile ?? false,
     logFilePath: userConfig?.logFilePath ?? '',
     logLevel: userConfig?.logLevel ?? 'info',
     logFormat: userConfig?.logFormat ?? 'table', // Default to table format
+    showFullTimestamp: userConfig?.showFullTimestamp ?? false, // Default to false
+    ...(userConfig?.consolePackagesShow !== undefined ? { consolePackagesShow: userConfig.consolePackagesShow } : {}),
+    ...(userConfig?.consolePackagesHide !== undefined ? { consolePackagesHide: userConfig.consolePackagesHide } : {}),
     enableUnifiedLogger: userConfig?.enableUnifiedLogger ?? false,
     unifiedLogger: userConfig?.unifiedLogger ?? {},
     defaultSource: userConfig?.defaultSource ?? 'application',
@@ -86,7 +93,8 @@ export function createLogger(
     tracing: userConfig?.tracing ?? undefined,
     trails: userConfig?.trails ?? undefined,
     schemaCheck: userConfig?.schemaCheck ?? { enabled: false },
-    shadow: userConfig?.shadow ?? undefined
+    shadow: userConfig?.shadow ?? undefined,
+    debugScoping: userConfig?.debugScoping ?? undefined
   };
 
   const sinks: any = {};
@@ -110,13 +118,15 @@ export function createLogger(
           ...(appInfo.name && { appName: appInfo.name }),
           ...(appInfo.version && { appVersion: appInfo.version }),
           // Include other metadata fields if present
+          ...(meta?.identity && { identity: meta.identity }),
           ...(meta?.correlationId && { correlationId: meta.correlationId }),
           ...(meta?.jobId && { jobId: meta.jobId }),
           ...(meta?.runId && { runId: meta.runId }),
           ...(meta?.sessionId && { sessionId: meta.sessionId }),
           ...(meta?.tags && { tags: meta.tags })
         };
-        outputLogAsTable(envelope);
+        const showFullTimestamp = userConfig?.showFullTimestamp ?? false;
+        outputLogAsTable(envelope, showFullTimestamp);
       } else if (resolved.logFormat === 'yaml') {
         // YAML format: create envelope and format as YAML
         const envelope: LogEnvelope = {
@@ -129,6 +139,7 @@ export function createLogger(
           ...(appInfo.name && { appName: appInfo.name }),
           ...(appInfo.version && { appVersion: appInfo.version }),
           // Include other metadata fields if present
+          ...(meta?.identity && { identity: meta.identity }),
           ...(meta?.correlationId && { correlationId: meta.correlationId }),
           ...(meta?.tags && { tags: meta.tags }),
           ...(meta?._routing && { _routing: meta._routing })
@@ -143,7 +154,8 @@ export function createLogger(
           message: msg,
           data: meta ? { ...meta } : undefined,
           ...(appInfo.name && { appName: appInfo.name }),
-          ...(appInfo.version && { appVersion: appInfo.version })
+          ...(appInfo.version && { appVersion: appInfo.version }),
+          ...(meta?.identity && { identity: meta.identity })
         };
         // Avoid nesting _routing/noise into "data" twice
         if (meta?._routing) {

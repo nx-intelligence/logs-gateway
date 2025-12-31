@@ -149,12 +149,15 @@ function formatDataSummary(data: any): string {
  * Output log entry as a simple text line (conceptual table format)
  * Each log entry is displayed as a single line with key fields.
  * No truncation - full message is shown. Terminal will handle wrapping if configured.
+ * 
+ * @param envelope - The log envelope to format
+ * @param showFullTimestamp - If true, show full ISO timestamp; if false, show short time format (default: false)
  */
-export function outputLogAsTable(envelope: LogEnvelope): void {
+export function outputLogAsTable(envelope: LogEnvelope, showFullTimestamp: boolean = false): void {
   const parts: string[] = [];
   
-  // Time (short format) - fixed width for alignment
-  const time = formatTimestamp(envelope.timestamp);
+  // Time format - full ISO timestamp or short format
+  const time = showFullTimestamp ? envelope.timestamp : formatTimestamp(envelope.timestamp);
   parts.push(`[${time}]`);
   
   // Level with indicator - fixed width for alignment
@@ -208,6 +211,9 @@ export function outputLogAsTable(envelope: LogEnvelope): void {
   }
   if (envelope.tags && envelope.tags.length > 0) {
     metadataParts.push(`tags:${envelope.tags.join(',')}`);
+  }
+  if (envelope.identity) {
+    metadataParts.push(`identity:${envelope.identity}`);
   }
   
   // Add metadata section if present (separated by pipe for visual clarity)

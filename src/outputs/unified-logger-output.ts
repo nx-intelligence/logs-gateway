@@ -113,6 +113,9 @@ export class UnifiedLoggerOutput {
       if (meta?.correlationId) {
         payload.correlationId = meta.correlationId;
       }
+      if (meta?.identity) {
+        payload.identity = meta.identity;
+      }
 
       // Remove routing metadata from the payload to avoid noise
       delete payload._routing;

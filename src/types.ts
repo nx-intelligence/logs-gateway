@@ -60,7 +60,16 @@ export interface LoggingConfig {
  
   /** Output format: 'text' or 'json' (default: 'text') */
   logFormat?: LogFormat;
- 
+
+  /** Show full ISO timestamp in console logs (default: false) */
+  showFullTimestamp?: boolean;
+
+  /** Console package filtering: only show logs from these packages (comma-separated, console only) */
+  consolePackagesShow?: string[];
+  
+  /** Console package filtering: hide logs from these packages (comma-separated, console only) */
+  consolePackagesHide?: string[];
+
   /** Custom logger implementation (advanced use) */
   customLogger?: CustomLogger;
 
@@ -92,6 +101,41 @@ export interface LoggingConfig {
 
   /** Shadow logging configuration */
   shadow?: ShadowConfig;
+
+  /** Debug scoping configuration (from logger-debug.json) */
+  debugScoping?: DebugScopingConfig;
+}
+
+/**
+ * Between rule for stateful range-based filtering
+ */
+export interface BetweenRule {
+  /** Action to take when range is active */
+  action: 'include' | 'exclude';
+  /** If true: exact match (case sensitive), if false: partial match (case insensitive). Default: false */
+  exactMatch?: boolean;
+  /** If true: search entire log (message, identity, all meta fields), if false: only identity. Default: false */
+  searchLog?: boolean;
+  /** Identity patterns that start the range. Empty array means range starts from beginning. */
+  startIdentities: string[];
+  /** Identity patterns that end the range. Empty array means range never ends. */
+  endIdentities: string[];
+}
+
+/**
+ * Debug scoping configuration loaded from logger-debug.json
+ */
+export interface DebugScopingConfig {
+  scoping: {
+    /** Enable or disable runtime filtering */
+    status: 'enabled' | 'disabled';
+    /** Filter logs by identity (file:function format) */
+    filterIdentities?: string[];
+    /** Filter logs by application name */
+    filteredApplications?: string[];
+    /** Stateful range-based filtering rules */
+    between?: BetweenRule[];
+  };
 }
 
 /**
@@ -157,6 +201,8 @@ export interface LogMeta {
   [key: string]: any;
   /** Source identifier for the log entry */
   source?: string;
+  /** Identity identifier for the log entry (unique based on code location, auto-generated if not provided) */
+  identity?: string;
   /** Correlation ID for tracing related log entries */
   correlationId?: string;
   /** Routing metadata for controlling output destinations */
@@ -202,7 +248,7 @@ export interface UnifiedLoggerConfig {
 /**
  * Internal configuration type with all required fields
  */
-export type InternalLoggingConfig = Required<Omit<LoggingConfig, 'customLogger' | 'unifiedLogger' | 'transports' | 'tracing' | 'trails' | 'schemaCheck' | 'shadow'>> & { 
+export type InternalLoggingConfig = Required<Omit<LoggingConfig, 'customLogger' | 'unifiedLogger' | 'transports' | 'tracing' | 'trails' | 'schemaCheck' | 'shadow' | 'consolePackagesShow' | 'consolePackagesHide' | 'debugScoping'>> & { 
   customLogger?: CustomLogger;
   unifiedLogger?: UnifiedLoggerConfig;
   packageName: string;
@@ -211,6 +257,9 @@ export type InternalLoggingConfig = Required<Omit<LoggingConfig, 'customLogger' 
   trails?: TrailsConfig;
   schemaCheck?: { enabled?: boolean };
   shadow?: ShadowConfig;
+  consolePackagesShow?: string[] | undefined;
+  consolePackagesHide?: string[] | undefined;
+  debugScoping?: DebugScopingConfig;
 };
 
 /**
@@ -400,6 +449,8 @@ export interface LogEnvelope {
   spanId?: string;
 
   // Routing and metadata
+  /** Identity identifier for the log entry (unique based on code location) */
+  identity?: string;
   /** Routing metadata */
   _routing?: RoutingMeta;
   /** Free-form tags */

@@ -202,9 +202,11 @@ Then all log entries will automatically include:
 
 ## Overview: Scoping, Story Output & Troubleshooting
 
-This extension adds three major capabilities:
+This extension adds four major capabilities:
 
-1. **Scoping** – Given a verbose log stream, derive a **focused subset** of logs relevant to a problem or question. Scopes can be:
+1. **Runtime Filtering (logger-debug.json)** – Filter logs at the source before they're written. Place `logger-debug.json` at your project root to filter logs by identity or application name. This reduces noise at runtime and complements post-processing scoping.
+
+2. **Scoping** – Given a verbose log stream, derive a **focused subset** of logs relevant to a problem or question. Scopes can be:
    * Error-centric (anchor on a specific `error` entry)
    * Run/Correlation-centric (anchor on `runId`, `correlationId`, etc.)
    * Text-based (filter by message/data content)
@@ -212,12 +214,12 @@ This extension adds three major capabilities:
 
    Scoping **always uses verbose logs** if available, regardless of the current log level.
 
-2. **Story vs Full Data Output** – A scope can be returned as:
+3. **Story vs Full Data Output** – A scope can be returned as:
    * **Full data**: structured `ScopedLogView` with all entries
    * **Story**: human-readable narrative built automatically from entries using a generic `scopeRecord` helper
    * Or **both**
 
-3. **Troubleshooting Integration** – Wire in `nx-troubleshooting` so that errors/scopes:
+4. **Troubleshooting Integration** – Wire in `nx-troubleshooting` so that errors/scopes:
    * Are matched to **troubleshooting narratives**, and
    * Produce troubleshooting artifacts (Markdown/JSON/text) as **another log output channel** (`troubleshooting`)
 
@@ -337,7 +339,12 @@ const logger = createLogger(
 
 # Level & format
 {PREFIX}_LOG_LEVEL=verbose|debug|info|warn|error
-{PREFIX}_LOG_FORMAT=text|json|yaml
+{PREFIX}_LOG_FORMAT=text|json|yaml|table
+
+# Console output options
+{PREFIX}_SHOW_FULL_TIMESTAMP=true|false  # Show full ISO timestamp (default: false)
+{PREFIX}_CONSOLE_PACKAGES_SHOW=package1,package2  # Only show these packages in console (default: show all)
+{PREFIX}_CONSOLE_PACKAGES_HIDE=package1,package2  # Hide these packages in console (default: show all)
 
 # Debug namespace → enables verbose+debug for that namespace
 DEBUG=my-pkg,other-*
@@ -434,6 +441,133 @@ export interface LogEntry {
   scope?: ScopedMetadata;
 }
 ```
+
+### Runtime Filtering (logger-debug.json)
+
+Place a `logger-debug.json` file at your project root to filter logs at runtime:
+
+```json
+{
+  "scoping": {
+    "status": "enabled",
+    "filterIdentities": ["src/auth.ts:login", "src/payment.ts:processPayment"],
+    "filteredApplications": ["my-app", "other-app"],
+    "between": [
+      {
+        "action": "include",
+        "exactMatch": false,
+        "searchLog": false,
+        "startIdentities": ["src/api.ts:handleRequest"],
+        "endIdentities": ["src/api.ts:handleRequestEnd"]
+      }
+    ]
+  }
+}
+```
+
+**Behavior:**
+- When `status: "enabled"`, logs are filtered before being written to any output (console, file, unified-logger, shadow)
+- A log is included if its `identity` matches any entry in `filterIdentities` **OR** its `appName` matches any entry in `filteredApplications` **OR** it falls within an active "between" range (OR logic)
+- If all filters are empty or missing, all logs are included (no filtering)
+- File is auto-discovered from `process.cwd()` (searches up directory tree like package.json)
+- Configuration is loaded once at startup (not reloaded dynamically)
+- If file is not found or invalid, all logs are shown (graceful fallback)
+
+**Examples:**
+
+```json
+// Filter by identity only - only show logs from specific code locations
+{
+  "scoping": {
+    "status": "enabled",
+    "filterIdentities": ["src/auth.ts:login", "src/payment.ts:processPayment"]
+  }
+}
+```
+
+```json
+// Filter by application only - only show logs from specific apps
+{
+  "scoping": {
+    "status": "enabled",
+    "filteredApplications": ["my-app"]
+  }
+}
+```
+
+```json
+// Filter by both (OR logic - matches if identity OR appName matches)
+{
+  "scoping": {
+    "status": "enabled",
+    "filterIdentities": ["src/auth.ts:login"],
+    "filteredApplications": ["my-app"]
+  }
+}
+```
+
+```json
+// Between rules - stateful range-based filtering
+{
+  "scoping": {
+    "status": "enabled",
+    "between": [
+      {
+        "action": "include",
+        "exactMatch": false,
+        "searchLog": false,
+        "startIdentities": ["src/api.ts:handleRequest"],
+        "endIdentities": ["src/api.ts:handleRequestEnd"]
+      },
+      {
+        "action": "exclude",
+        "exactMatch": true,
+        "searchLog": false,
+        "startIdentities": ["src/db.ts:query"],
+        "endIdentities": ["src/db.ts:queryEnd"]
+      },
+      {
+        "action": "include",
+        "exactMatch": false,
+        "searchLog": true,
+        "startIdentities": [],
+        "endIdentities": ["src/init.ts:complete"]
+      },
+      {
+        "action": "include",
+        "exactMatch": true,
+        "searchLog": true,
+        "startIdentities": ["Payment started"],
+        "endIdentities": ["Payment completed"]
+      }
+    ]
+  }
+}
+```
+
+**Between Rules:**
+- **Stateful filtering**: Tracks active ranges across log calls
+- **`action`**: `"include"` to show logs within range, `"exclude"` to hide logs within range
+- **`exactMatch`**: 
+  - `true`: Exact string match (case sensitive)
+  - `false`: Partial substring match (case insensitive, default)
+- **`searchLog`**: 
+  - `true`: Search entire log (message + identity + all meta fields stringified)
+  - `false`: Search only identity field (default)
+- **`startIdentities`**: Array of patterns that activate the range. Empty array means range starts from the beginning
+- **`endIdentities`**: Array of patterns that deactivate the range. Empty array means range never ends
+- **Multiple ranges**: Can overlap and are tracked independently. Uses OR logic (if ANY include rule is active, include; if ANY exclude rule is active, exclude)
+- **Range behavior**: 
+  - When a log matches a start identity, the range becomes active
+  - When a log matches an end identity, the range becomes inactive
+  - If a log matches both start and end identities, the range state toggles
+  - Ranges with empty `startIdentities` are active from the first log
+  - Ranges with empty `endIdentities` never close once activated
+
+**Integration with Existing Scoping:**
+- `logger-debug.json` → Runtime filtering (reduces noise at source, filters before writing)
+- `scopeLogs()` → Post-processing scoping (analyzes already-written logs)
+- Both can be used together for maximum control
 
 ### ScopeCriteria
 
@@ -1083,7 +1217,10 @@ The troubleshooting integration uses `nx-troubleshooting` to match errors to sol
 | `{P}_LOG_FILE`         | Log file path                          | —         |
 | `{P}_LOG_TO_UNIFIED`   | Enable unified-logger                  | `false`   |
 | `{P}_LOG_LEVEL`        | `verbose\|debug\|info\|warn\|error` | `info` |
-| `{P}_LOG_FORMAT`       | `text\|json\|yaml` | `text` |
+| `{P}_LOG_FORMAT`       | `text\|json\|yaml\|table` | `table` |
+| `{P}_SHOW_FULL_TIMESTAMP` | Show full ISO timestamp in console | `false` |
+| `{P}_CONSOLE_PACKAGES_SHOW` | Comma-separated packages to show (console only) | (show all) |
+| `{P}_CONSOLE_PACKAGES_HIDE` | Comma-separated packages to hide (console only) | (show all) |
 | `DEBUG`                | Namespace(s) enabling verbose+debug    | —         |
 | `{P}_SANITIZE_ENABLED` | Turn on sanitization                   | `false`   |
 | `{P}_TRACE_OTEL`       | Attach `traceId`/`spanId` if available | `true`    |
