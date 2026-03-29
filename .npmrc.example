@@ -1,5 +1,18 @@
-# Copy to ~/.npmrc in your home directory, or use `npm login`.
-# Do not commit real tokens — GitHub and npm will block or revoke them.
+# NPM / npmjs.com
 #
-# Example (use a token from https://www.npmjs.com/settings/~/tokens):
-# //registry.npmjs.org/:_authToken=${NPM_TOKEN}
+# This package is public: anyone can `npm install logs-gateway` with no token.
+# A token (or `npm login`) is only needed for maintainers running `npm publish`,
+# or for private / scoped packages elsewhere — not for consumers of this repo.
+#
+# Put your real token in your USER-LEVEL file only (not in this repo):
+#   Windows: %USERPROFILE%\.npmrc
+#   macOS/Linux: ~/.npmrc
+#
+# Or run: npm login
+#
+# Create a token: https://www.npmjs.com/settings/~/tokens
+# Then one line (replace YOUR_TOKEN):
+#   //registry.npmjs.org/:_authToken=YOUR_TOKEN
+#
+# Why not commit .npmrc here? GitHub blocks pushes that contain tokens; the
+# repo copy must stay out of git. Your local ~/.npmrc is still used by npm.
