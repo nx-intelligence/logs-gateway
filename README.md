@@ -6,6 +6,10 @@ A standardized logging gateway for Node.js applications. Flexible multi-transpor
 
 This component supports **zero-config initialization** via environment variables and is compliant with the [Env-Ready Component Standard (ERC 2.0)](https://github.com/xeonox/erc-standard).
 
+### Package-level `.env` contract (libraries)
+
+For **per-package** log thresholds, logs-gateway follows **`{PREFIX}_LOGS_LEVEL`** (canonical). **`{PREFIX}_LOG_LEVEL`** remains supported when **`_LOGS_LEVEL`** is not set in the environment. Omitting both keys defaults to **`warn`** (warn and error only); set **`{PREFIX}_LOGS_LEVEL=off`** to silence. Cross-cutting options (console, file, format) stay host-level. Full detail: [`docs/package-usage.md`](./docs/package-usage.md) (published on npm). Helpers: `resolvePackageLogsLevel`, `parsePackageLogsLevelString`, `packageLogsLevelEnvKey`.
+
 ### ERC 2.0 Compliance
 
 - ✅ **Auto-Discovery**: Zero-config initialization from environment variables
@@ -23,7 +27,7 @@ npm install logs-gateway
 
 # 2. Set environment variables (replace MY_APP with your prefix)
 export MY_APP_LOG_TO_CONSOLE=true
-export MY_APP_LOG_LEVEL=info
+export MY_APP_LOGS_LEVEL=warn
 export MY_APP_LOG_FORMAT=json
 
 # 3. Use with zero config!
@@ -337,7 +341,8 @@ const logger = createLogger(
 # Unified-logger
 {PREFIX}_LOG_TO_UNIFIED=true|false
 
-# Level & format
+# Level & format (per-package threshold: canonical _LOGS_LEVEL; legacy _LOG_LEVEL if _LOGS_LEVEL unset)
+{PREFIX}_LOGS_LEVEL=off|none|silent|error|warn|info|debug|verbose
 {PREFIX}_LOG_LEVEL=verbose|debug|info|warn|error
 {PREFIX}_LOG_FORMAT=text|json|yaml|table
 
@@ -1216,7 +1221,8 @@ The troubleshooting integration uses `nx-troubleshooting` to match errors to sol
 | `{P}_LOG_TO_FILE`      | Enable file output                     | `false`   |
 | `{P}_LOG_FILE`         | Log file path                          | —         |
 | `{P}_LOG_TO_UNIFIED`   | Enable unified-logger                  | `false`   |
-| `{P}_LOG_LEVEL`        | `verbose\|debug\|info\|warn\|error` | `info` |
+| `{P}_LOGS_LEVEL`       | Per-package threshold (canonical); omit both this and `{P}_LOG_LEVEL` → **`warn`** | `warn` |
+| `{P}_LOG_LEVEL`        | Legacy level — used only if `{P}_LOGS_LEVEL` is not set in the environment | — |
 | `{P}_LOG_FORMAT`       | `text\|json\|yaml\|table` | `table` |
 | `{P}_SHOW_FULL_TIMESTAMP` | Show full ISO timestamp in console | `false` |
 | `{P}_CONSOLE_PACKAGES_SHOW` | Comma-separated packages to show (console only) | (show all) |

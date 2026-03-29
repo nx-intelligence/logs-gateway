@@ -1,0 +1,5 @@
+# Copy to ~/.npmrc in your home directory, or use `npm login`.
+# Do not commit real tokens — GitHub and npm will block or revoke them.
+#
+# Example (use a token from https://www.npmjs.com/settings/~/tokens):
+# //registry.npmjs.org/:_authToken=${NPM_TOKEN}

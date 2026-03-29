@@ -1,0 +1,11 @@
+{
+  "component": "logs-gateway",
+  "version": "1.5.0",
+  "ercCompliant": true,
+  "ercVersion": "1.1.0",
+  "requirements": {
+    "required": [],
+    "optional": []
+  },
+  "dependencies": []
+}

@@ -149,9 +149,49 @@ export class LogSanitizer {
   }
 
   /**
+   * Whether `fullPath` (lowercase, dot-separated) matches a deny/allow pattern.
+   * - `password` matches only path `password` (single segment).
+   * - `user.password` matches exactly that path.
+   * - `*.token` matches one segment + `.token` (e.g. `api.token`).
+   */
+  private pathMatchesPattern(fullPath: string, pattern: string): boolean {
+    const fp = fullPath.toLowerCase();
+    const p = pattern.toLowerCase().trim();
+    if (!p) return false;
+    if (p.includes('*')) {
+      if (p === '*.token') {
+        return /^[^.]+\.token$/.test(fp);
+      }
+      const parts = p.split('*');
+      const re = new RegExp(
+        '^' +
+          parts
+            .map((seg, i) => {
+              const escaped = seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              return i < parts.length - 1 ? `${escaped}[^.]*` : escaped;
+            })
+            .join('') +
+          '$'
+      );
+      return re.test(fp);
+    }
+    if (!p.includes('.')) {
+      return fp === p;
+    }
+    return fp === p;
+  }
+
+  /**
    * Sanitize an object recursively
    */
-  private sanitizeObject(obj: any, depth: number, startTime: number, maxTime: number, seen = new WeakSet()): SanitizationResult {
+  private sanitizeObject(
+    obj: any,
+    depth: number,
+    startTime: number,
+    maxTime: number,
+    seen = new WeakSet(),
+    pathPrefix = ''
+  ): SanitizationResult {
     if (depth > this.config.maxDepth) {
       return { sanitized: obj, redactionCount: 0, truncated: true };
     }
@@ -187,8 +227,10 @@ export class LogSanitizer {
       let totalRedactions = 0;
       let truncated = false;
 
-              for (const item of obj) {
-                const result = this.sanitizeObject(item, depth + 1, startTime, maxTime, seen);
+              for (let i = 0; i < obj.length; i++) {
+                const item = obj[i];
+                const indexPath = pathPrefix ? `${pathPrefix}.${i}` : String(i);
+                const result = this.sanitizeObject(item, depth + 1, startTime, maxTime, seen, indexPath);
                 sanitizedArray.push(result.sanitized);
                 totalRedactions += result.redactionCount;
                 truncated = truncated || result.truncated;
@@ -204,18 +246,12 @@ export class LogSanitizer {
 
       for (const [key, value] of Object.entries(obj)) {
         const lowerKey = key.toLowerCase();
-        
-        // Check allowlist first (highest priority)
-        // Check for exact key match or nested key match
-        const isInAllowlist = this.config.keysAllowlist.some(allowKey => {
-          if (allowKey.includes('.')) {
-            // For nested keys like 'user.password', we need to check the full path
-            // This is a simplified check - in a real implementation, we'd need to track the full path
-            return false; // For now, only exact matches work
-          }
-          return allowKey === lowerKey;
-        });
-        
+        const fullPath = pathPrefix ? `${pathPrefix}.${lowerKey}` : lowerKey;
+
+        const isInAllowlist = this.config.keysAllowlist.some((allowKey) =>
+          this.pathMatchesPattern(fullPath, allowKey)
+        );
+
         if (isInAllowlist) {
           sanitizedObj[key] = value;
           continue;
@@ -232,16 +268,10 @@ export class LogSanitizer {
           continue;
         }
 
-        // Check if this key should be redacted (including nested paths)
-        const shouldRedact = this.config.keysDenylist.some(denyKey => {
-          if (denyKey.includes('.')) {
-            // For nested keys like 'user.password', we need to check the full path
-            // This is a simplified check - in a real implementation, we'd need to track the full path
-            return false; // For now, only exact matches work
-          }
-          return denyKey === lowerKey;
-        });
-        
+        const shouldRedact = this.config.keysDenylist.some((denyKey) =>
+          this.pathMatchesPattern(fullPath, denyKey)
+        );
+
         if (shouldRedact) {
           sanitizedObj[key] = this.config.maskWith;
           totalRedactions++;
@@ -255,13 +285,12 @@ export class LogSanitizer {
           if (sanitizedString !== value) {
             totalRedactions++;
           }
-                } else {
-                  // Recursively sanitize non-string values
-                  const result = this.sanitizeObject(value, depth + 1, startTime, maxTime, seen);
-                  sanitizedObj[key] = result.sanitized;
-                  totalRedactions += result.redactionCount;
-                  truncated = truncated || result.truncated;
-                }
+        } else {
+          const result = this.sanitizeObject(value, depth + 1, startTime, maxTime, seen, fullPath);
+          sanitizedObj[key] = result.sanitized;
+          totalRedactions += result.redactionCount;
+          truncated = truncated || result.truncated;
+        }
       }
 
       return { sanitized: sanitizedObj, redactionCount: totalRedactions, truncated };

@@ -24,6 +24,7 @@ import { outputLogAsTable } from './formatters/table-formatter';
 import { ShadowSink } from './outputs/shadow-sink';
 import { detectAppInfo } from './app-info';
 import { loadDebugConfig } from './utils/debug-config';
+import { resolvePackageLogsLevel } from './utils/package-logs-level';
 
 /**
  * Main LogsGateway class for handling all logging operations
@@ -66,12 +67,14 @@ export class LogsGateway {
     // Load debug scoping configuration from logger-debug.json
     this.debugScopingConfig = loadDebugConfig();
    
-    // Check DEBUG environment variable
     const envPrefix = packageConfig.envPrefix || packageConfig.packageName;
-    const debugEnabled = process.env.DEBUG?.includes(
-      packageConfig.debugNamespace || packageConfig.packageName.toLowerCase()
-    );
-   
+
+    const resolvedLevel = resolvePackageLogsLevel({
+      envPrefix,
+      ...(userConfig?.logLevel !== undefined ? { userLogLevel: userConfig.logLevel } : {}),
+      env: process.env
+    });
+
     // Parse console package filtering from env vars
     const parsePackageList = (envVar: string | undefined): string[] | undefined => {
       if (!envVar) return undefined;
@@ -91,9 +94,9 @@ export class LogsGateway {
                    process.env[`${envPrefix}_LOG_FILE`] ??
                    '',
      
-      logLevel: userConfig?.logLevel ??
-                (process.env[`${envPrefix}_LOG_LEVEL`] as LogLevel | undefined) ??
-                (debugEnabled ? 'verbose' : 'info'),
+      logLevel: resolvedLevel.logLevel,
+
+      packageLogsDisabled: resolvedLevel.packageLogsDisabled,
      
       logFormat: userConfig?.logFormat ??
                  (process.env[`${envPrefix}_LOG_FORMAT`] as LogFormat) ??
@@ -251,12 +254,15 @@ export class LogsGateway {
    * Check if a log level should be output based on current configuration
    */
   private shouldLog(level: LogLevel): boolean {
-    // Check DEBUG environment variable override
+    if (this.config.packageLogsDisabled) {
+      return false;
+    }
+
+    // Check DEBUG environment variable override (does not apply when package is silent via _LOGS_LEVEL contract)
     const debugEnabled = process.env.DEBUG?.includes(
       this.packageConfig.debugNamespace || this.packageConfig.packageName.toLowerCase()
     );
-    
-    // If DEBUG is enabled, allow verbose and debug levels regardless of configured level
+
     if (debugEnabled && (level === 'verbose' || level === 'debug')) {
       return true;
     }
@@ -732,6 +738,10 @@ export class LogsGateway {
    * Core logging method that handles all log output
    */
   private emit(level: LogLevel, message: string, meta?: LogMeta): void {
+    if (this.config.packageLogsDisabled) {
+      return;
+    }
+
     // Get identity - use provided identity or auto-generate from call site
     const identity = meta?.identity ?? this.getCallSiteIdentity();
     

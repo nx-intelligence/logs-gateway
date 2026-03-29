@@ -4,6 +4,9 @@ node_modules/
 # Environment
 .env
 
+# Local npm auth (never commit tokens)
+.npmrc
+
 # Build output
 dist/
 *.tsbuildinfo

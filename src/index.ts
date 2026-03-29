@@ -34,6 +34,15 @@ import { outputLogAsTable } from './formatters/table-formatter';
 import { detectAppInfo } from './app-info';
 import type { LoggerPackageConfig, LoggingConfig, LogLevel, LogMeta, LogEnvelope, TransportsConfig, TracingConfig, TrailsConfig } from './types';
 
+export {
+  parsePackageLogsLevelString,
+  resolvePackageLogsLevel,
+  packageLogsLevelEnvKey,
+  legacyPackageLogLevelEnvKey
+} from './utils/package-logs-level';
+
+export type { ResolvePackageLogsLevelOptions } from './utils/package-logs-level';
+
 /**
  * Create a package-specific logger instance
  *
@@ -46,6 +55,7 @@ import type { LoggerPackageConfig, LoggingConfig, LogLevel, LogMeta, LogEnvelope
  * import { createLogger } from 'logs-gateway';
  *
  * // Zero-config mode (ERC 2.0): Auto-discovers from environment variables
+ * // Set MY_APP_LOGS_LEVEL (canonical) or MY_APP_LOG_LEVEL (legacy) — see docs/package-usage.md
  * const logger = createLogger(
  *   { packageName: 'MY_APP', envPrefix: 'MY_APP', debugNamespace: 'my-app' }
  * );

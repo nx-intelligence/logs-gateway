@@ -8,6 +8,43 @@ import * as yaml from 'js-yaml';
 import type { LogEnvelope } from '../types';
 
 /**
+ * Replace circular references with a placeholder so YAML/JSON can serialize.
+ */
+function breakCircularRefs<T>(obj: T, seen = new WeakSet<object>()): T {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  if (obj instanceof Date) {
+    return obj.toISOString() as T;
+  }
+  if (seen.has(obj as object)) {
+    return '[Circular]' as T;
+  }
+  seen.add(obj as object);
+  if (Array.isArray(obj)) {
+    return (obj as unknown as unknown[]).map((item) => breakCircularRefs(item, seen)) as T;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj as object)) {
+    out[k] = breakCircularRefs(v as object, seen);
+  }
+  return out as T;
+}
+
+function safeJsonStringify(value: unknown): string {
+  const seen = new WeakSet<object>();
+  return JSON.stringify(value, (_key, v) => {
+    if (typeof v === 'object' && v !== null) {
+      if (seen.has(v)) {
+        return '[Circular]';
+      }
+      seen.add(v);
+    }
+    return v;
+  });
+}
+
+/**
  * Format a log envelope as YAML
  * 
  * @param envelope - The log envelope to format
@@ -15,14 +52,9 @@ import type { LogEnvelope } from '../types';
  */
 export function formatLogEntryAsYaml(envelope: LogEnvelope): string {
   try {
-    // Ensure no circular references by attempting safe stringify first
-    // This should never fail since sanitization already handles circular refs
-    JSON.stringify(envelope);
-    
-    // Ensure timestamps and IDs are strings to avoid YAML implicit typing
-    const safeEnvelope = ensureStringTypes(envelope);
-    
-    // Format as YAML with safe options
+    // Coerce Date / non-string IDs first so breakCircularRefs does not treat Date as an empty object
+    const safeEnvelope = breakCircularRefs(ensureStringTypes(envelope) as LogEnvelope);
+
     const yamlContent = yaml.dump(safeEnvelope, {
       noRefs: true,        // No references/anchors for readability & ingest safety
       skipInvalid: true,   // Skip invalid values
@@ -32,11 +64,9 @@ export function formatLogEntryAsYaml(envelope: LogEnvelope): string {
       quotingType: '"',    // Use double quotes for strings
       forceQuotes: false   // Only quote when necessary
     });
-    
-    // Add document separator prefix for multi-document YAML
+
     return `---\n${yamlContent}`;
-  } catch (error) {
-    // Fallback to JSON if YAML formatting fails
+  } catch {
     const fallbackEnvelope = {
       ...envelope,
       data: {
@@ -47,8 +77,8 @@ export function formatLogEntryAsYaml(envelope: LogEnvelope): string {
         }
       }
     };
-    
-    return JSON.stringify(fallbackEnvelope);
+
+    return safeJsonStringify(fallbackEnvelope);
   }
 }
 

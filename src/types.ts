@@ -251,6 +251,8 @@ export interface UnifiedLoggerConfig {
 export type InternalLoggingConfig = Required<Omit<LoggingConfig, 'customLogger' | 'unifiedLogger' | 'transports' | 'tracing' | 'trails' | 'schemaCheck' | 'shadow' | 'consolePackagesShow' | 'consolePackagesHide' | 'debugScoping'>> & { 
   customLogger?: CustomLogger;
   unifiedLogger?: UnifiedLoggerConfig;
+  /** When true, package diagnostics are suppressed regardless of DEBUG or sinks (see resolvePackageLogsLevel). */
+  packageLogsDisabled: boolean;
   packageName: string;
   transports?: TransportsConfig;
   tracing?: TracingConfig;

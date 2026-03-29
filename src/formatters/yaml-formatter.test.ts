@@ -20,7 +20,7 @@ describe('YAML Formatter', () => {
       const result = formatLogEntryAsYaml(envelope);
       
       expect(result).toContain('---');
-      expect(result).toContain('timestamp: 2025-01-25T10:30:00.000Z');
+      expect(result).toContain('2025-01-25T10:30:00.000Z');
       expect(result).toContain('package: TEST_APP');
       expect(result).toContain('level: INFO');
       expect(result).toContain('message: Test message');
@@ -203,13 +203,10 @@ describe('YAML Formatter', () => {
         data: circularData
       };
 
-      // This should not throw, but should fallback to JSON
       const result = formatLogEntryAsYaml(envelope);
-      
-      // Should be JSON fallback (starts with {, not ---)
-      expect(result).toMatch(/^\{/);
-      expect(result).toContain('formatFallback');
-      expect(result).toContain('yaml→json');
+
+      expect(result).toMatch(/^---\n/);
+      expect(result).toContain('[Circular]');
     });
 
     it('should handle YAML dump errors with fallback', () => {
@@ -269,11 +266,11 @@ describe('YAML Formatter', () => {
       
       // Should have proper indentation (2 spaces)
       const lines = result.split('\n');
-      const dataLine = lines.find(line => line.includes('data:'));
-      const nestedLine = lines.find(line => line.includes('nested:'));
+      const dataLine = lines.find(line => /^data:/.test(line));
+      const nestedLine = lines.find(line => /^  nested:/.test(line));
       
-      expect(dataLine).toMatch(/^  data:/);
-      expect(nestedLine).toMatch(/^    nested:/);
+      expect(dataLine).toMatch(/^data:/);
+      expect(nestedLine).toMatch(/^  nested:/);
     });
 
     it('should handle arrays properly', () => {
